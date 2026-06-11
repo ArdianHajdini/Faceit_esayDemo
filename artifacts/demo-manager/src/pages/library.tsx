@@ -1,19 +1,21 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { 
-  useListDemos, 
-  useGetDemoStats, 
-  useDeleteDemo, 
-  getListDemosQueryKey,
-  getGetDemoStatsQueryKey
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Search, Map as MapIcon, Users, Trash2, ChevronRight, Activity, CalendarDays, Crosshair } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Search,
+  Map as MapIcon,
+  Trash2,
+  ChevronRight,
+  Activity,
+  CalendarDays,
+  HardDrive,
+  Crosshair,
+} from "lucide-react";
 import { format } from "date-fns";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -28,44 +30,62 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { loadSettings } from "@/services/storage";
+import { loadDemosFromDisk, deleteDemoFull, formatFileSize } from "@/services/demoService";
+import type { Demo } from "@/types/demo";
 
 export default function Library() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const settings = loadSettings();
 
-  const { data: demos, isLoading: loadingDemos } = useListDemos();
-  const { data: stats, isLoading: loadingStats } = useGetDemoStats();
-  const deleteDemo = useDeleteDemo();
+  const { data: demos, isLoading } = useQuery({
+    queryKey: ["demos", settings.demoDirectory],
+    queryFn: () => loadDemosFromDisk(settings.demoDirectory),
+  });
 
-  const filteredDemos = demos?.filter(demo => {
-    const searchLower = search.toLowerCase();
+  const allDemos: Demo[] = demos ?? [];
+  const totalDemos = allDemos.length;
+  const totalSize = allDemos.reduce((sum, d) => sum + (d.size || 0), 0);
+  const mapsTracked = new Set(
+    allDemos.filter((d) => d.map).map((d) => d.map as string),
+  ).size;
+  const topMap = (() => {
+    const counts = new Map<string, number>();
+    for (const d of allDemos) if (d.map) counts.set(d.map, (counts.get(d.map) || 0) + 1);
+    let top = "N/A";
+    let max = 0;
+    for (const [m, c] of counts) if (c > max) { max = c; top = m; }
+    return top;
+  })();
+
+  const filteredDemos = allDemos.filter((demo) => {
+    const s = search.toLowerCase();
     return (
-      demo.map.toLowerCase().includes(searchLower) ||
-      demo.filename.toLowerCase().includes(searchLower) ||
-      (demo.team1Name && demo.team1Name.toLowerCase().includes(searchLower)) ||
-      (demo.team2Name && demo.team2Name.toLowerCase().includes(searchLower))
+      demo.displayName.toLowerCase().includes(s) ||
+      demo.filename.toLowerCase().includes(s) ||
+      (demo.map && demo.map.toLowerCase().includes(s)) ||
+      (demo.team1Name && demo.team1Name.toLowerCase().includes(s)) ||
+      (demo.team2Name && demo.team2Name.toLowerCase().includes(s))
     );
   });
 
-  const handleDelete = (id: number) => {
-    deleteDemo.mutate({ id }, {
-      onSuccess: () => {
-        toast({ title: "Demo deleted successfully" });
-        queryClient.invalidateQueries({ queryKey: getListDemosQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetDemoStatsQueryKey() });
-      },
-      onError: () => {
-        toast({ title: "Failed to delete demo", variant: "destructive" });
-      }
-    });
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteDemoFull(allDemos, id);
+      toast({ title: "Demo deleted successfully" });
+      queryClient.invalidateQueries({ queryKey: ["demos"] });
+    } catch {
+      toast({ title: "Failed to delete demo", variant: "destructive" });
+    }
   };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground uppercase">Demo Library</h1>
-        <p className="text-muted-foreground mt-1">Manage and analyze your parsed CS2 match demos.</p>
+        <p className="text-muted-foreground mt-1">Manage and analyze your local CS2 match demos.</p>
       </div>
 
       {/* Stats Row */}
@@ -76,32 +96,32 @@ export default function Library() {
             <Activity className="w-4 h-4 text-primary" />
           </CardHeader>
           <CardContent>
-            {loadingStats ? <Skeleton className="h-8 w-16" /> : (
-              <div className="text-3xl font-bold">{stats?.totalDemos || 0}</div>
+            {isLoading ? <Skeleton className="h-8 w-16" /> : (
+              <div className="text-3xl font-bold">{totalDemos}</div>
             )}
           </CardContent>
         </Card>
-        
+
         <Card className="bg-card/50 border-border">
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase">Parsed Ready</CardTitle>
-            <Crosshair className="w-4 h-4 text-green-500" />
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase">Total Size</CardTitle>
+            <HardDrive className="w-4 h-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            {loadingStats ? <Skeleton className="h-8 w-16" /> : (
-              <div className="text-3xl font-bold">{stats?.readyDemos || 0}</div>
+            {isLoading ? <Skeleton className="h-8 w-16" /> : (
+              <div className="text-3xl font-bold">{formatFileSize(totalSize)}</div>
             )}
           </CardContent>
         </Card>
-        
+
         <Card className="bg-card/50 border-border">
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase">Unique Players</CardTitle>
-            <Users className="w-4 h-4 text-blue-500" />
+            <CardTitle className="text-sm font-medium text-muted-foreground uppercase">Maps Tracked</CardTitle>
+            <Crosshair className="w-4 h-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            {loadingStats ? <Skeleton className="h-8 w-16" /> : (
-              <div className="text-3xl font-bold">{stats?.totalPlayers || 0}</div>
+            {isLoading ? <Skeleton className="h-8 w-16" /> : (
+              <div className="text-3xl font-bold">{mapsTracked}</div>
             )}
           </CardContent>
         </Card>
@@ -112,10 +132,8 @@ export default function Library() {
             <MapIcon className="w-4 h-4 text-purple-500" />
           </CardHeader>
           <CardContent>
-            {loadingStats ? <Skeleton className="h-8 w-16" /> : (
-              <div className="text-2xl font-bold truncate">
-                {stats?.maps && stats.maps.length > 0 ? stats.maps.sort((a,b)=>b.count - a.count)[0].map : "N/A"}
-              </div>
+            {isLoading ? <Skeleton className="h-8 w-16" /> : (
+              <div className="text-2xl font-bold truncate">{topMap}</div>
             )}
           </CardContent>
         </Card>
@@ -126,8 +144,8 @@ export default function Library() {
         <div className="flex items-center justify-between">
           <div className="relative w-full max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input 
-              placeholder="Search by map, team, or filename..." 
+            <Input
+              placeholder="Search by name, map, team, or filename..."
               className="pl-9 bg-card/50 border-border font-mono text-sm"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -141,7 +159,7 @@ export default function Library() {
 
         <Card className="border-border bg-card">
           <div className="divide-y divide-border">
-            {loadingDemos ? (
+            {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="p-4 flex items-center justify-between">
                   <div className="flex items-center space-x-4">
@@ -154,76 +172,91 @@ export default function Library() {
                   <Skeleton className="h-8 w-24" />
                 </div>
               ))
-            ) : filteredDemos?.length === 0 ? (
+            ) : filteredDemos.length === 0 ? (
               <div className="p-12 text-center text-muted-foreground">
                 <MapIcon className="w-12 h-12 mx-auto mb-4 opacity-20" />
                 <p className="text-lg font-medium">No demos found</p>
-                <p className="text-sm">Try adjusting your search or import a new demo.</p>
+                <p className="text-sm">
+                  Try adjusting your search or import a new demo. In the browser preview the
+                  library is empty — run the desktop app to scan your CS2 replay folder.
+                </p>
               </div>
             ) : (
-              filteredDemos?.map((demo) => (
-                <div key={demo.id} className="p-4 flex items-center justify-between hover:bg-secondary/50 transition-colors group">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-14 h-14 bg-secondary rounded-md flex flex-col items-center justify-center border border-border shrink-0">
-                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">MAP</span>
-                      <span className="text-sm font-bold truncate max-w-full px-1">{demo.map.replace('de_', '')}</span>
-                    </div>
-                    
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <Link href={`/demos/${demo.id}`}>
-                          <h3 className="text-lg font-bold text-foreground hover:text-primary transition-colors cursor-pointer">
-                            {demo.team1Name || 'Team A'} <span className="text-muted-foreground px-1">vs</span> {demo.team2Name || 'Team B'}
-                          </h3>
-                        </Link>
-                        {demo.status === 'ready' && <Badge variant="default" className="bg-primary/20 text-primary hover:bg-primary/30 text-[10px] uppercase">Ready</Badge>}
-                        {demo.status === 'pending' && <Badge variant="secondary" className="text-[10px] uppercase">Pending</Badge>}
-                        {demo.status === 'error' && <Badge variant="destructive" className="text-[10px] uppercase">Error</Badge>}
+              filteredDemos.map((demo) => {
+                const hasTeams = !!(demo.team1Name || demo.team2Name);
+                return (
+                  <div key={demo.id} className="p-4 flex items-center justify-between hover:bg-secondary/50 transition-colors group">
+                    <div className="flex items-center space-x-4">
+                      <div className="w-14 h-14 bg-secondary rounded-md flex flex-col items-center justify-center border border-border shrink-0">
+                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">MAP</span>
+                        <span className="text-sm font-bold truncate max-w-full px-1">
+                          {demo.map ? demo.map.replace("de_", "") : "DEM"}
+                        </span>
                       </div>
-                      
-                      <div className="flex items-center space-x-4 mt-1 text-xs text-muted-foreground font-mono">
-                        <span className="flex items-center"><CalendarDays className="w-3 h-3 mr-1" /> {format(new Date(demo.importedAt), "MMM d, yyyy")}</span>
-                        <span className="flex items-center"><Users className="w-3 h-3 mr-1" /> {demo.playerCount || 0} Players</span>
-                        <span className="truncate max-w-[200px]" title={demo.filename}>{demo.filename}</span>
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive hover:bg-destructive/10">
-                          <Trash2 className="w-4 h-4" />
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <Link href={`/demos/${demo.id}`}>
+                            <h3 className="text-lg font-bold text-foreground hover:text-primary transition-colors cursor-pointer">
+                              {hasTeams ? (
+                                <>
+                                  {demo.team1Name || "Team A"}
+                                  <span className="text-muted-foreground px-1">vs</span>
+                                  {demo.team2Name || "Team B"}
+                                </>
+                              ) : (
+                                demo.displayName
+                              )}
+                            </h3>
+                          </Link>
+                          <Badge variant="default" className="bg-primary/20 text-primary hover:bg-primary/30 text-[10px] uppercase">Ready</Badge>
+                        </div>
+
+                        <div className="flex items-center space-x-4 mt-1 text-xs text-muted-foreground font-mono">
+                          <span className="flex items-center"><CalendarDays className="w-3 h-3 mr-1" /> {format(new Date(demo.modifiedAt), "MMM d, yyyy")}</span>
+                          <span className="flex items-center"><HardDrive className="w-3 h-3 mr-1" /> {formatFileSize(demo.size)}</span>
+                          <span className="truncate max-w-[200px]" title={demo.filename}>{demo.filename}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent className="bg-card border-border">
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Demo?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This removes the demo from your library. In the desktop app the
+                              demo file is also deleted from disk.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel className="bg-secondary text-foreground hover:bg-secondary/80 border-0">Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={() => handleDelete(demo.id)}
+                              data-testid={`btn-delete-demo-${demo.id}`}
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+
+                      <Link href={`/demos/${demo.id}`}>
+                        <Button variant="secondary" className="font-bold uppercase text-xs tracking-wider">
+                          View <ChevronRight className="w-4 h-4 ml-1" />
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent className="bg-card border-border">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete Demo?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This will permanently remove the demo record from the database. The physical file will not be deleted.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel className="bg-secondary text-foreground hover:bg-secondary/80 border-0">Cancel</AlertDialogCancel>
-                          <AlertDialogAction 
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            onClick={() => handleDelete(demo.id)}
-                            data-testid={`btn-delete-demo-${demo.id}`}
-                          >
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-
-                    <Link href={`/demos/${demo.id}`}>
-                      <Button variant="secondary" className="font-bold uppercase text-xs tracking-wider">
-                        View <ChevronRight className="w-4 h-4 ml-1" />
-                      </Button>
-                    </Link>
+                      </Link>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </Card>

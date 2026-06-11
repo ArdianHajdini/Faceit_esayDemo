@@ -1,22 +1,16 @@
-import { useEffect, useState } from "react";
-import {
-  useGetSettings,
-  useUpdateSettings,
-  getGetSettingsQueryKey,
-} from "@workspace/api-client-react";
+import { useState } from "react";
 import {
   Settings as SettingsIcon,
   FolderOpen,
   Save,
-  Plus,
-  X,
   Zap,
-  FolderCheck,
   Loader2,
   CheckCircle2,
   AlertCircle,
+  HardDrive,
+  Crosshair,
+  User,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -28,184 +22,103 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { loadSettings, saveSettings } from "@/services/storage";
+import { isTauri, tauriDetectDownloadsFolder } from "@/services/tauriBridge";
+import { detectCS2Path, getCS2Status } from "@/services/cs2Service";
+
+async function pickFolder(): Promise<string | null> {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const sel = await open({ directory: true, multiple: false });
+  return typeof sel === "string" ? sel : null;
+}
+
+async function pickExe(): Promise<string | null> {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const sel = await open({
+    multiple: false,
+    filters: [{ name: "CS2 Executable", extensions: ["exe"] }],
+  });
+  return typeof sel === "string" ? sel : null;
+}
 
 export default function SettingsPage() {
   const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const { data: settings, isLoading } = useGetSettings();
-  const updateSettingsMutation = useUpdateSettings();
+  const initial = loadSettings();
+  const tauri = isTauri();
 
-  const [cs2Path, setCs2Path] = useState("");
-  const [replaysSubfolder, setReplaysSubfolder] = useState("replays");
-  const [autoImport, setAutoImport] = useState(false);
-  const [watchedFolders, setWatchedFolders] = useState<string[]>([]);
-  const [newFolder, setNewFolder] = useState("");
+  const [cs2Path, setCs2Path] = useState(initial.cs2Path);
+  const [steamPath, setSteamPath] = useState(initial.steamPath);
+  const [demoDirectory, setDemoDirectory] = useState(initial.demoDirectory);
+  const [downloadsFolder, setDownloadsFolder] = useState(initial.downloadsFolder);
+  const [autoExtractGz, setAutoExtractGz] = useState(initial.autoExtractGz);
+  const [autoAddToLibrary, setAutoAddToLibrary] = useState(initial.autoAddToLibrary);
+  const [steamId, setSteamId] = useState(initial.steamId);
 
-  const [detectingDefaults, setDetectingDefaults] = useState(false);
-  const [creatingReplays, setCreatingReplays] = useState(false);
-  const [replaysStatus, setReplaysStatus] = useState<
-    "idle" | "ok" | "error"
-  >("idle");
   const [isDirty, setIsDirty] = useState(false);
+  const [detecting, setDetecting] = useState(false);
 
-  const isElectron = typeof window !== "undefined" && !!window.electronAPI;
+  const cs2Status = getCS2Status(cs2Path);
 
-  // Populate form from fetched settings
-  useEffect(() => {
-    if (!settings) return;
-    setCs2Path(settings.cs2Path ?? "");
-    setReplaysSubfolder(settings.replaysSubfolder ?? "replays");
-    setAutoImport(settings.autoImport ?? false);
-    setWatchedFolders(settings.watchedFolders ?? []);
-    setIsDirty(false);
-  }, [settings]);
-
-  // On first load in Electron: auto-detect paths if nothing is configured yet
-  useEffect(() => {
-    if (!isElectron || !settings) return;
-    if (!settings.cs2Path && watchedFolders.length === 0) {
-      detectSystemDefaults(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isElectron, settings]);
-
-  async function detectSystemDefaults(silent = false) {
-    if (!window.electronAPI) return;
-    setDetectingDefaults(true);
+  async function handleAutoDetect() {
+    setDetecting(true);
     try {
-      const defaults = await window.electronAPI.getSystemDefaults();
-      if (defaults.cs2Path && !cs2Path) {
-        setCs2Path(defaults.cs2Path);
+      const res = await detectCS2Path();
+      if (res) {
+        setCs2Path(res.cs2Path);
+        setSteamPath(res.steamPath);
+        setDemoDirectory(res.replayFolder);
         setIsDirty(true);
       }
-      if (
-        defaults.downloadsFolder &&
-        !watchedFolders.includes(defaults.downloadsFolder)
-      ) {
-        setWatchedFolders((prev) => {
-          const next = [...prev, defaults.downloadsFolder];
-          setIsDirty(true);
-          return next;
-        });
+      const dl = await tauriDetectDownloadsFolder();
+      if (dl) {
+        setDownloadsFolder(dl);
+        setIsDirty(true);
       }
-      if (!silent) {
-        toast({
-          title: "Auto-detect complete",
-          description: defaults.cs2Path
-            ? `CS2 found at ${defaults.cs2Path}`
-            : "CS2 not found — enter path manually.",
-        });
-      }
+      toast({
+        title: res ? "Auto-detect complete" : "CS2 not found",
+        description: res ? res.cs2Path : "Enter your paths manually.",
+        variant: res ? undefined : "destructive",
+      });
+    } catch (err) {
+      toast({
+        title: "Auto-detect failed",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
     } finally {
-      setDetectingDefaults(false);
+      setDetecting(false);
     }
   }
 
-  async function handleBrowseCs2() {
-    if (!window.electronAPI) return;
-    const folder = await window.electronAPI.openFolder();
-    if (folder) {
-      setCs2Path(folder);
-      setIsDirty(true);
-    }
-  }
-
-  async function handleAddWatchedFolder() {
-    if (!window.electronAPI && !newFolder.trim()) return;
-    let folder = newFolder.trim();
-    if (isElectron && !folder) {
-      folder = (await window.electronAPI!.openFolder()) ?? "";
-    }
-    if (!folder || watchedFolders.includes(folder)) return;
-    setWatchedFolders((prev) => [...prev, folder]);
-    setNewFolder("");
-    setIsDirty(true);
-  }
-
-  async function handleBrowseWatchedFolder() {
-    if (!window.electronAPI) return;
-    const folder = await window.electronAPI.openFolder();
-    if (folder && !watchedFolders.includes(folder)) {
-      setWatchedFolders((prev) => [...prev, folder]);
-      setIsDirty(true);
-    }
-  }
-
-  function removeWatchedFolder(idx: number) {
-    setWatchedFolders((prev) => prev.filter((_, i) => i !== idx));
-    setIsDirty(true);
-  }
-
-  async function handleEnsureReplaysFolder() {
-    if (!window.electronAPI || !cs2Path) return;
-    setCreatingReplays(true);
-    setReplaysStatus("idle");
+  async function browseInto(setter: (v: string) => void, exe = false) {
     try {
-      const result = await window.electronAPI.ensureReplaysFolder(
-        cs2Path,
-        replaysSubfolder
-      );
-      if (result.ok) {
-        setReplaysStatus("ok");
-        toast({
-          title: "Replays folder ready",
-          description: result.path,
-        });
-      } else {
-        setReplaysStatus("error");
-        toast({
-          title: "Failed to create replays folder",
-          description: result.error,
-          variant: "destructive",
-        });
+      const path = exe ? await pickExe() : await pickFolder();
+      if (path) {
+        setter(path);
+        setIsDirty(true);
       }
-    } finally {
-      setCreatingReplays(false);
+    } catch (err) {
+      toast({
+        title: "Could not open folder dialog",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
     }
   }
 
   function handleSave() {
-    updateSettingsMutation.mutate(
-      {
-        data: {
-          cs2Path: cs2Path || undefined,
-          watchedFolders,
-          autoImport,
-          replaysSubfolder,
-        },
-      },
-      {
-        onSuccess: (updated) => {
-          toast({ title: "Settings saved" });
-          queryClient.setQueryData(getGetSettingsQueryKey(), updated);
-          setIsDirty(false);
-        },
-        onError: () => {
-          toast({ title: "Failed to save settings", variant: "destructive" });
-        },
-      }
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="space-y-8 max-w-3xl mx-auto pb-12">
-        <Skeleton className="h-10 w-48" />
-        <Skeleton className="h-4 w-64" />
-        <Card className="border-border bg-card">
-          <CardHeader>
-            <Skeleton className="h-5 w-32" />
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </CardContent>
-        </Card>
-      </div>
-    );
+    saveSettings({
+      cs2Path,
+      steamPath,
+      demoDirectory,
+      downloadsFolder,
+      autoExtractGz,
+      autoAddToLibrary,
+      steamId,
+    });
+    toast({ title: "Settings saved" });
+    setIsDirty(false);
   }
 
   return (
@@ -216,18 +129,18 @@ export default function SettingsPage() {
             Settings
           </h1>
           <p className="text-muted-foreground mt-1">
-            Configure paths and automation for Demo Manager.
+            Configure CS2 paths and import automation for Demo Manager.
           </p>
         </div>
-        {isElectron && (
+        {tauri && (
           <Button
             variant="outline"
             size="sm"
             className="gap-2 shrink-0"
-            onClick={() => detectSystemDefaults(false)}
-            disabled={detectingDefaults}
+            onClick={handleAutoDetect}
+            disabled={detecting}
           >
-            {detectingDefaults ? (
+            {detecting ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Zap className="w-3.5 h-3.5" />
@@ -237,178 +150,223 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* ── CS2 path ── */}
+      {!tauri && (
+        <div className="flex items-start gap-3 p-3 rounded-md bg-primary/10 border border-primary/20">
+          <AlertCircle className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+          <p className="text-xs text-primary/90">
+            You're viewing the browser preview. Auto-detection and folder browsing require the
+            desktop app — here you can type paths manually to preview the layout.
+          </p>
+        </div>
+      )}
+
+      {/* ── CS2 installation ── */}
       <Card className="border-border bg-card">
         <CardHeader>
           <CardTitle className="uppercase tracking-wider text-sm text-primary flex items-center gap-2">
-            <SettingsIcon className="w-4 h-4" />
+            <Crosshair className="w-4 h-4" />
             CS2 Installation
           </CardTitle>
           <CardDescription>
-            Path to your CS2 folder. Used to resolve the replays directory and write .cfg files.
+            Path to your cs2.exe. Used to launch demos directly into Counter-Strike 2.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <FolderOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                className="pl-9 font-mono text-sm bg-secondary/30"
-                placeholder="C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Global Offensive"
-                value={cs2Path}
-                onChange={(e) => {
-                  setCs2Path(e.target.value);
-                  setIsDirty(true);
-                }}
-              />
+          <div className="space-y-1.5">
+            <label className="text-xs uppercase tracking-wider text-muted-foreground">
+              cs2.exe path
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <SettingsIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  className="pl-9 font-mono text-sm bg-secondary/30"
+                  placeholder="C:\Program Files (x86)\Steam\...\game\bin\win64\cs2.exe"
+                  value={cs2Path}
+                  onChange={(e) => {
+                    setCs2Path(e.target.value);
+                    setIsDirty(true);
+                  }}
+                />
+              </div>
+              {tauri && (
+                <Button variant="outline" onClick={() => browseInto(setCs2Path, true)} className="shrink-0">
+                  Browse
+                </Button>
+              )}
             </div>
-            {isElectron && (
-              <Button variant="outline" onClick={handleBrowseCs2} className="shrink-0">
-                Browse
-              </Button>
+            {cs2Path && (
+              <p className="text-xs font-mono mt-1 flex items-center gap-1.5">
+                {cs2Status === "found" ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                    <span className="text-primary">Looks valid</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-3.5 h-3.5 text-destructive" />
+                    <span className="text-destructive">Should point to cs2.exe</span>
+                  </>
+                )}
+              </p>
             )}
           </div>
 
-          {/* Replays subfolder */}
           <div className="space-y-1.5">
             <label className="text-xs uppercase tracking-wider text-muted-foreground">
-              Replays subfolder
+              Steam root
             </label>
             <div className="flex gap-2">
               <Input
                 className="font-mono text-sm bg-secondary/30"
-                placeholder="replays"
-                value={replaysSubfolder}
+                placeholder="C:\Program Files (x86)\Steam"
+                value={steamPath}
                 onChange={(e) => {
-                  setReplaysSubfolder(e.target.value);
+                  setSteamPath(e.target.value);
                   setIsDirty(true);
                 }}
               />
-              {isElectron && cs2Path && (
-                <Button
-                  variant="outline"
-                  className="shrink-0 gap-1.5"
-                  onClick={handleEnsureReplaysFolder}
-                  disabled={creatingReplays}
-                >
-                  {creatingReplays ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : replaysStatus === "ok" ? (
-                    <CheckCircle2 className="w-4 h-4 text-primary" />
-                  ) : replaysStatus === "error" ? (
-                    <AlertCircle className="w-4 h-4 text-destructive" />
-                  ) : (
-                    <FolderCheck className="w-4 h-4" />
-                  )}
-                  Create folder
+              {tauri && (
+                <Button variant="outline" onClick={() => browseInto(setSteamPath)} className="shrink-0">
+                  Browse
                 </Button>
               )}
             </div>
-            {cs2Path && replaysSubfolder && (
-              <p className="text-xs text-muted-foreground font-mono mt-1">
-                Full path:{" "}
-                <span className="text-foreground">
-                  {cs2Path}\game\csgo\{replaysSubfolder}
-                </span>
-              </p>
-            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* ── Watched folders ── */}
+      {/* ── Folders ── */}
       <Card className="border-border bg-card">
         <CardHeader>
           <CardTitle className="uppercase tracking-wider text-sm text-primary flex items-center gap-2">
             <FolderOpen className="w-4 h-4" />
-            Watched Folders
+            Folders
           </CardTitle>
           <CardDescription>
-            Folders monitored for new .dem and .gz files. Your Downloads folder is the default.
+            Where demos live and where new downloads are scanned from.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {watchedFolders.length > 0 ? (
-            <ul className="space-y-2">
-              {watchedFolders.map((folder, i) => (
-                <li
-                  key={i}
-                  className="flex items-center justify-between text-sm font-mono bg-secondary/20 border border-border rounded px-3 py-2"
-                >
-                  <span className="text-foreground truncate flex-1 mr-2">{folder}</span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => removeWatchedFolder(i)}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground italic">
-              No folders configured. Add your Downloads folder to get started.
-            </p>
-          )}
+          <div className="space-y-1.5">
+            <label className="text-xs uppercase tracking-wider text-muted-foreground">
+              Demo directory (CS2 replays folder)
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <HardDrive className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  className="pl-9 font-mono text-sm bg-secondary/30"
+                  placeholder="C:\...\game\csgo\replays"
+                  value={demoDirectory}
+                  onChange={(e) => {
+                    setDemoDirectory(e.target.value);
+                    setIsDirty(true);
+                  }}
+                />
+              </div>
+              {tauri && (
+                <Button variant="outline" onClick={() => browseInto(setDemoDirectory)} className="shrink-0">
+                  Browse
+                </Button>
+              )}
+            </div>
+          </div>
 
-          {/* Add folder */}
-          <div className="flex gap-2">
-            {!isElectron && (
-              <Input
-                className="font-mono text-sm bg-secondary/30"
-                placeholder="Paste a folder path…"
-                value={newFolder}
-                onChange={(e) => setNewFolder(e.target.value)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && handleAddWatchedFolder()
-                }
-              />
-            )}
-            {isElectron ? (
-              <Button
-                variant="outline"
-                className="gap-2 w-full"
-                onClick={handleBrowseWatchedFolder}
-              >
-                <Plus className="w-4 h-4" />
-                Add folder…
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                className="shrink-0 gap-2"
-                onClick={handleAddWatchedFolder}
-                disabled={!newFolder.trim()}
-              >
-                <Plus className="w-4 h-4" />
-                Add
-              </Button>
-            )}
+          <div className="space-y-1.5">
+            <label className="text-xs uppercase tracking-wider text-muted-foreground">
+              Downloads folder
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <FolderOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  className="pl-9 font-mono text-sm bg-secondary/30"
+                  placeholder="C:\Users\<name>\Downloads"
+                  value={downloadsFolder}
+                  onChange={(e) => {
+                    setDownloadsFolder(e.target.value);
+                    setIsDirty(true);
+                  }}
+                />
+              </div>
+              {tauri && (
+                <Button variant="outline" onClick={() => browseInto(setDownloadsFolder)} className="shrink-0">
+                  Browse
+                </Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* ── Auto-import toggle ── */}
+      {/* ── Automation toggles ── */}
       <Card className="border-border bg-card">
-        <CardContent className="pt-6">
+        <CardContent className="pt-6 space-y-6">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium uppercase tracking-wider text-foreground">
-                Auto-Import
+                Auto-extract .gz / .zst
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Automatically detect and import new .dem files from watched folders.
+                Automatically decompress compressed demos when importing.
               </p>
             </div>
             <Switch
-              checked={autoImport}
+              checked={autoExtractGz}
               onCheckedChange={(v) => {
-                setAutoImport(v);
+                setAutoExtractGz(v);
                 setIsDirty(true);
               }}
               className="data-[state=checked]:bg-primary"
+            />
+          </div>
+
+          <div className="flex items-center justify-between border-t border-border pt-6">
+            <div>
+              <p className="text-sm font-medium uppercase tracking-wider text-foreground">
+                Auto-add to library
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Add scanned/imported demos to your library automatically.
+              </p>
+            </div>
+            <Switch
+              checked={autoAddToLibrary}
+              onCheckedChange={(v) => {
+                setAutoAddToLibrary(v);
+                setIsDirty(true);
+              }}
+              className="data-[state=checked]:bg-primary"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Advanced ── */}
+      <Card className="border-border bg-card">
+        <CardHeader>
+          <CardTitle className="uppercase tracking-wider text-sm text-primary flex items-center gap-2">
+            <User className="w-4 h-4" />
+            Advanced
+          </CardTitle>
+          <CardDescription>
+            Optional. Your Steam ID64 helps the demo parser identify your own team.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1.5">
+            <label className="text-xs uppercase tracking-wider text-muted-foreground">
+              Steam ID64
+            </label>
+            <Input
+              className="font-mono text-sm bg-secondary/30"
+              placeholder="76561198012345678"
+              value={steamId}
+              onChange={(e) => {
+                setSteamId(e.target.value);
+                setIsDirty(true);
+              }}
             />
           </div>
         </CardContent>
@@ -419,19 +377,10 @@ export default function SettingsPage() {
         <Button
           className="font-bold uppercase tracking-wide px-8 gap-2"
           onClick={handleSave}
-          disabled={updateSettingsMutation.isPending || !isDirty}
+          disabled={!isDirty}
         >
-          {updateSettingsMutation.isPending ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Saving…
-            </>
-          ) : (
-            <>
-              <Save className="w-4 h-4" />
-              Save Settings
-            </>
-          )}
+          <Save className="w-4 h-4" />
+          Save Settings
         </Button>
       </div>
     </div>

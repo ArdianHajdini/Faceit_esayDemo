@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { useImportDemo } from "@workspace/api-client-react";
 import {
   UploadCloud,
   File,
@@ -25,6 +24,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { parseDemoFile, type DemoMeta } from "@/lib/demo-parser";
+import { loadSettings, loadDemos, saveDemos } from "@/services/storage";
+import {
+  importDemoFromPath,
+  buildDemoFromFile,
+  addDemoToLibrary,
+} from "@/services/demoService";
+import { isTauri, tauriGetFileInfo } from "@/services/tauriBridge";
 
 interface ParsedInfo {
   filePath: string;
@@ -33,16 +39,27 @@ interface ParsedInfo {
   map: string;
   team1Name: string;
   team2Name: string;
+  /** Browser File object (drag/drop or file picker) — absent in Tauri/manual-path mode. */
+  file?: File;
+  /** True when filePath is a real filesystem path (Tauri browse or manual path). */
+  fromDisk: boolean;
+}
+
+function mapFromFilename(fileName: string): string {
+  const m = fileName.match(/de_[a-z0-9_]+|cs_[a-z0-9_]+/i);
+  return m ? m[0].toLowerCase() : "";
 }
 
 export default function ImportDemo() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const importDemoMutation = useImportDemo();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const settings = loadSettings();
+  const tauri = isTauri();
 
   const [parsed, setParsed] = useState<ParsedInfo | null>(null);
   const [parsing, setParsing] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [manualPath, setManualPath] = useState("");
 
   async function handleFile(file: File) {
@@ -51,19 +68,16 @@ export default function ImportDemo() {
     try {
       const meta = await parseDemoFile(file);
       const fileName = file.name;
-      // Try to extract map from filename if not found in header
-      let map = meta.map ?? "";
-      if (!map) {
-        const m = fileName.match(/de_[a-z0-9_]+|cs_[a-z0-9_]+/i);
-        if (m) map = m[0].toLowerCase();
-      }
+      const map = meta.map ?? mapFromFilename(fileName);
       setParsed({
-        filePath: (file as File & { path?: string }).path ?? file.name,
+        filePath: file.name,
         fileName,
         meta,
         map,
         team1Name: "",
         team2Name: "",
+        file,
+        fromDisk: false,
       });
     } catch {
       toast({
@@ -76,81 +90,62 @@ export default function ImportDemo() {
     }
   }
 
-  async function handleElectronBrowse() {
-    if (!window.electronAPI) return;
-    const filePath = await window.electronAPI.openFile();
-    if (!filePath) return;
+  async function handleTauriBrowse() {
+    let path: string | null = null;
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "CS2 Demo", extensions: ["dem", "gz", "zst"] }],
+      });
+      path = typeof selected === "string" ? selected : null;
+    } catch (err) {
+      toast({
+        title: "Could not open file dialog",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!path) return;
 
     setParsing(true);
     setParsed(null);
     try {
-      // Read the first 32 KB via Electron IPC for header parsing
-      const headResult = await window.electronAPI.readFileHead(filePath, 32768);
-      const statResult = await window.electronAPI.statFile(filePath);
-
-      const date = statResult.ok && statResult.mtime
-        ? new Date(statResult.mtime)
-        : new Date();
-
-      let meta: DemoMeta = { format: "unknown", date };
-
-      if (headResult.ok && headResult.data) {
-        // Decode base64 → Uint8Array and run the same parser logic
-        const binaryStr = atob(headResult.data);
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-
-        // Detect format
-        const magic = new TextDecoder("latin1").decode(bytes.slice(0, 8));
-        if (magic === "HL2DEMO\0") {
-          const readStr = (offset: number, max: number) => {
-            const sl = bytes.slice(offset, offset + max);
-            const ni = sl.indexOf(0);
-            return new TextDecoder("latin1").decode(sl.slice(0, ni >= 0 ? ni : max)).trim();
-          };
-          const serverName = readStr(16, 260);
-          const mapName = readStr(536, 260);
-          meta = { format: "HL2DEMO", map: mapName || undefined, serverName, date };
-        } else if (magic === "PBDEMS2\0") {
-          const text = new TextDecoder("latin1").decode(bytes);
-          const m = text.match(/de_[a-z0-9_]{2,20}|cs_[a-z0-9_]{2,20}/);
-          meta = { format: "PBDEMS2", map: m?.[0], date };
-        }
+      const fileName = path.split(/[/\\]/).pop() ?? path;
+      let date = new Date();
+      try {
+        const info = await tauriGetFileInfo(path);
+        date = new Date(info.modifiedAt);
+      } catch {
+        /* keep now() */
       }
-
-      const fileName = filePath.split(/[/\\]/).pop() ?? filePath;
-      let map = meta.map ?? "";
-      if (!map) {
-        const m = fileName.match(/de_[a-z0-9_]+|cs_[a-z0-9_]+/i);
-        if (m) map = m[0].toLowerCase();
-      }
-
-      setParsed({ filePath, fileName, meta, map, team1Name: "", team2Name: "" });
-    } catch (err) {
-      toast({
-        title: "Could not read file",
-        description: "The file could not be parsed.",
-        variant: "destructive",
+      setParsed({
+        filePath: path,
+        fileName,
+        meta: { format: "unknown", date },
+        map: mapFromFilename(fileName),
+        team1Name: "",
+        team2Name: "",
+        fromDisk: true,
       });
     } finally {
       setParsing(false);
     }
   }
 
-  async function handleManualPath() {
+  function handleManualPath() {
     const p = manualPath.trim();
     if (!p) return;
     const fileName = p.split(/[/\\]/).pop() ?? p;
-    let map = "";
-    const m = fileName.match(/de_[a-z0-9_]+|cs_[a-z0-9_]+/i);
-    if (m) map = m[0].toLowerCase();
     setParsed({
       filePath: p,
       fileName,
       meta: { format: "unknown", date: new Date() },
-      map,
+      map: mapFromFilename(fileName),
       team1Name: "",
       team2Name: "",
+      fromDisk: true,
     });
   }
 
@@ -160,36 +155,69 @@ export default function ImportDemo() {
     if (file) handleFile(file);
   }
 
-  function handleSubmit() {
+  function patchMetadata(id: string) {
     if (!parsed) return;
-    importDemoMutation.mutate(
-      {
-        data: {
-          filePath: parsed.filePath,
-          map: parsed.map || undefined,
-          team1Name: parsed.team1Name || undefined,
-          team2Name: parsed.team2Name || undefined,
-          importedAt: parsed.meta.date.toISOString(),
-        },
-      },
-      {
-        onSuccess: (demo) => {
-          toast({ title: "Demo imported", description: parsed.fileName });
-          setLocation(`/demos/${demo.id}`);
-        },
-        onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-          toast({
-            title: "Import failed",
-            description: msg ?? "Something went wrong.",
-            variant: "destructive",
-          });
-        },
-      }
-    );
+    const demos = loadDemos();
+    const idx = demos.findIndex((d) => d.id === id);
+    if (idx === -1) return;
+    demos[idx] = {
+      ...demos[idx],
+      map: parsed.map || undefined,
+      team1Name: parsed.team1Name || undefined,
+      team2Name: parsed.team2Name || undefined,
+    };
+    saveDemos(demos);
   }
 
-  const isElectron = typeof window !== "undefined" && !!window.electronAPI;
+  async function handleSubmit() {
+    if (!parsed) return;
+    setImporting(true);
+    try {
+      if (tauri && parsed.fromDisk) {
+        // Real filesystem import via Rust (copies/extracts into the demo directory)
+        const demo = await importDemoFromPath(
+          parsed.filePath,
+          settings.demoDirectory,
+          settings.autoExtractGz,
+        );
+        patchMetadata(demo.id);
+        toast({ title: "Demo imported", description: parsed.fileName });
+        setLocation(`/demos/${demo.id}`);
+        return;
+      }
+
+      // Browser fallback — register the demo in the local library (localStorage only)
+      const base = parsed.file
+        ? buildDemoFromFile(parsed.file, settings.demoDirectory || "demos")
+        : {
+            filename: parsed.fileName,
+            displayName: parsed.fileName.replace(/\.dem$/i, ""),
+            filepath: parsed.filePath,
+            directory: parsed.filePath.replace(/[\\/][^\\/]+$/, ""),
+            size: 0,
+            modifiedAt: parsed.meta.date.toISOString(),
+          };
+
+      const demos = addDemoToLibrary({
+        ...base,
+        map: parsed.map || undefined,
+        team1Name: parsed.team1Name || undefined,
+        team2Name: parsed.team2Name || undefined,
+      });
+      const created = demos.find((d) => d.filepath === base.filepath);
+      toast({ title: "Demo added", description: parsed.fileName });
+      if (created) setLocation(`/demos/${created.id}`);
+      else setLocation("/");
+    } catch (err) {
+      toast({
+        title: "Import failed",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    } finally {
+      setImporting(false);
+    }
+  }
 
   return (
     <div className="space-y-8 max-w-3xl mx-auto pb-12">
@@ -210,7 +238,7 @@ export default function ImportDemo() {
             Select Demo File
           </CardTitle>
           <CardDescription>
-            {isElectron
+            {tauri
               ? "Click Browse to open a file dialog, or drag and drop a .dem / .gz file."
               : "Drag and drop a .dem file, or click to browse, or paste a file path below."}
           </CardDescription>
@@ -219,7 +247,7 @@ export default function ImportDemo() {
           {/* Drop zone */}
           <div
             className="border-2 border-dashed border-border rounded-lg p-10 text-center cursor-pointer transition-colors hover:border-primary/60 hover:bg-primary/5"
-            onClick={() => (isElectron ? handleElectronBrowse() : fileInputRef.current?.click())}
+            onClick={() => (tauri ? handleTauriBrowse() : fileInputRef.current?.click())}
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
           >
@@ -238,7 +266,7 @@ export default function ImportDemo() {
               <div className="flex flex-col items-center gap-3 text-muted-foreground">
                 <File className="w-8 h-8" />
                 <span className="text-sm">
-                  {isElectron ? "Click to browse" : "Drop .dem / .gz here or click to browse"}
+                  {tauri ? "Click to browse" : "Drop .dem / .gz here or click to browse"}
                 </span>
                 <span className="text-xs opacity-60">.dem · .dem.gz · .gz</span>
               </div>
@@ -246,7 +274,7 @@ export default function ImportDemo() {
           </div>
 
           {/* Hidden file input (browser only) */}
-          {!isElectron && (
+          {!tauri && (
             <input
               ref={fileInputRef}
               type="file"
@@ -259,12 +287,12 @@ export default function ImportDemo() {
             />
           )}
 
-          {/* Electron browse button */}
-          {isElectron && (
+          {/* Tauri browse button */}
+          {tauri && (
             <Button
               variant="outline"
               className="w-full gap-2"
-              onClick={handleElectronBrowse}
+              onClick={handleTauriBrowse}
               disabled={parsing}
             >
               <FolderOpen className="w-4 h-4" />
@@ -272,8 +300,8 @@ export default function ImportDemo() {
             </Button>
           )}
 
-          {/* Manual path fallback (non-Electron) */}
-          {!isElectron && (
+          {/* Manual path fallback (browser) */}
+          {!tauri && (
             <div className="flex gap-2">
               <Input
                 className="font-mono text-sm bg-secondary/30"
@@ -398,9 +426,9 @@ export default function ImportDemo() {
               <Button
                 className="font-bold uppercase tracking-wide px-8"
                 onClick={handleSubmit}
-                disabled={importDemoMutation.isPending}
+                disabled={importing}
               >
-                {importDemoMutation.isPending ? (
+                {importing ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Importing…

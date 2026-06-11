@@ -1,80 +1,150 @@
-name: Build Windows App
+name: Build FACEIT easyDemo CS2 (Windows)
 
 on:
   push:
     branches: [main]
-    tags:
-      - "v*"
-  pull_request:
-    branches: [main]
+    paths:
+      - "artifacts/demo-manager/**"
+      - ".github/workflows/build-windows.yml"
   workflow_dispatch:
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      # ── Critical: remove Linux-only platform exclusions ──────────────────
+      # pnpm-workspace.yaml excludes all win32 native binaries (esbuild,
+      # rollup, lightningcss, tailwindcss-oxide) because Replit runs Linux.
+      # On a Windows runner those exclusions break the Vite build entirely.
+      # We patch the file locally on the runner before pnpm install runs.
+      # This change is NOT committed back to the repo.
+      - name: Patch pnpm-workspace.yaml for Windows native binaries
+        shell: pwsh
+        run: |
+          $lines = Get-Content pnpm-workspace.yaml
+          $filtered = $lines | Where-Object {
+            # Keep every line that is NOT a win32/windows platform exclusion
+            $_ -notmatch '"[^"]*win32[^"]*":\s*"-"' -and
+            $_ -notmatch '"[^"]*windows[^"]*":\s*"-"'
+          }
+          # NOTE: minimumReleaseAge is intentionally left untouched. The win32
+          # optional deps are published alongside their already-pinned Linux
+          # counterparts, so they are effectively always older than the 24h
+          # window. Disabling the supply-chain guard on the machine that builds
+          # shipped binaries is not worth the marginal convenience.
+          $filtered | Set-Content pnpm-workspace.yaml
+          Write-Host "Patched pnpm-workspace.yaml — win32 exclusions removed."
+
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "20"
 
-      - name: Install pnpm
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
+          run_install: false
 
-      - name: Get pnpm store directory
+      - name: Get pnpm store path
         id: pnpm-cache
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+        shell: pwsh
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $env:GITHUB_OUTPUT
 
-      - name: Cache pnpm modules
+      - name: Cache pnpm store
         uses: actions/cache@v4
         with:
           path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+            ${{ runner.os }}-pnpm-
 
-      - name: Install all dependencies
+      - name: Install Rust stable (MSVC target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            artifacts/demo-manager/src-tauri/target
+          key: ${{ runner.os }}-cargo-v3-${{ hashFiles('artifacts/demo-manager/src-tauri/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-v3-
+
+      # ── Install JS/TS dependencies ────────────────────────────────────────
+      # --no-frozen-lockfile is required because the lockfile was generated on
+      # Linux and does not include Windows-specific optional dependencies.
+      # pnpm will resolve and add them without changing the committed lockfile.
+      - name: Install pnpm dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Build frontend (demo-manager Vite app)
+      # ── Clean our crate's stale artifacts (not deps) ──────────────────────
+      # Erases only this crate's own compiled objects from the cached target/
+      # dir so no stale incremental/proc-macro state can survive. Dependency
+      # crates (reqwest, tauri, etc.) stay cached for speed.
+      - name: Clean stale crate artifacts
+        working-directory: artifacts/demo-manager/src-tauri
+        run: cargo clean -p cs2-demo-manager
+
+      # ── Build ─────────────────────────────────────────────────────────────
+      # tauri.conf.json has beforeBuildCommand: "pnpm run build"
+      # so Tauri will build the Vite frontend automatically before compiling Rust.
+      - name: Build Tauri app (release)
+        working-directory: artifacts/demo-manager
         env:
-          BASE_PATH: /
-          PORT: 3000
-        run: pnpm --filter @workspace/demo-manager run build
+          NODE_ENV: production
+          CARGO_INCREMENTAL: "0"
+        run: pnpm exec tauri build
 
-      - name: Build Electron main process
-        working-directory: electron
-        run: pnpm run build:main
-
-      - name: Build Electron distributable (Windows)
-        working-directory: electron
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run dist:win
-
-      - name: Upload installer artifact
+      # ── Upload artifacts ──────────────────────────────────────────────────
+      - name: Upload portable .exe
         uses: actions/upload-artifact@v4
         with:
-          name: faceit-demo-manager-windows
-          path: |
-            electron/release/**/*.exe
-            electron/release/**/*.msi
+          name: FaceitEasyDemo-portable-exe
+          path: artifacts/demo-manager/src-tauri/target/release/cs2-demo-manager.exe
           if-no-files-found: warn
+          retention-days: 30
 
-      - name: Create GitHub Release (on tag push)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      - name: Upload MSI installer
+        uses: actions/upload-artifact@v4
         with:
-          files: |
-            electron/release/**/*.exe
-            electron/release/**/*.msi
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: FaceitEasyDemo-installer-msi
+          path: artifacts/demo-manager/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: FaceitEasyDemo-installer-nsis
+          path: artifacts/demo-manager/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: warn
+          retention-days: 30
+
+      # ── Summary ───────────────────────────────────────────────────────────
+      - name: Print build summary
+        if: always()
+        shell: pwsh
+        run: |
+          $releaseDir = "artifacts/demo-manager/src-tauri/target/release"
+          Write-Host "=== Build output ==="
+          if (Test-Path "$releaseDir/cs2-demo-manager.exe") {
+            $size = (Get-Item "$releaseDir/cs2-demo-manager.exe").length / 1MB
+            Write-Host "  Portable EXE: $([math]::Round($size,1)) MB"
+          }
+          Get-ChildItem "$releaseDir/bundle/msi/*.msi" -ErrorAction SilentlyContinue | ForEach-Object {
+            $size = $_.length / 1MB
+            Write-Host "  MSI: $($_.Name) ($([math]::Round($size,1)) MB)"
+          }
+          Get-ChildItem "$releaseDir/bundle/nsis/*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
+            $size = $_.length / 1MB
+            Write-Host "  NSIS: $($_.Name) ($([math]::Round($size,1)) MB)"
+          }

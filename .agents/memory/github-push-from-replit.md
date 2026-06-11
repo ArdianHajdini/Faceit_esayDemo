@@ -15,11 +15,12 @@ description: How to push this repo to an external GitHub repo from the Replit ma
 1. Make file edits.
 2. End the loop and tell the user to reply "push" — this lets Replit create the
    checkpoint commit first.
-3. On the next turn, push with the PAT in the URL (token stored as a Replit secret):
+3. On the next turn, push with the PAT in the URL (token stored as a Replit secret).
+   The secret name varies per project — check `viewEnvVars` (e.g. `GITHUB_PAT`):
 
 ```
 git --no-optional-locks push \
-  "https://<github-username>:${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/<owner>/<repo>.git" \
+  "https://<github-username>:${GITHUB_PAT}@github.com/<owner>/<repo>.git" \
   HEAD:main
 ```
 
