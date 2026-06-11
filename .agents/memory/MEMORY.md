@@ -1,0 +1,2 @@
+- [Cross-platform native binary overrides](cross-platform-native-binaries.md) — pnpm-workspace.yaml strips all non-linux native binaries with `'-'`; breaks Windows/Mac CI builds until you remove the target platform's entries and regen the lockfile.
+- [GitHub push from Replit](github-push-from-replit.md) — main agent can't git commit; Replit auto-commits at loop end. Push external repos with PAT in URL after checkpoint.
