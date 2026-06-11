@@ -3,20 +3,24 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: FACEIT Demo Manager API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: demos
+    description: Demo management
+  - name: settings
+    description: App settings
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +28,156 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /demos:
+    get:
+      operationId: listDemos
+      tags: [demos]
+      summary: List all demos
+      responses:
+        "200":
+          description: List of demos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Demo"
+
+    post:
+      operationId: importDemo
+      tags: [demos]
+      summary: Import a demo by file path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DemoImportInput"
+      responses:
+        "201":
+          description: Demo imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Demo"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /demos/stats:
+    get:
+      operationId: getDemoStats
+      tags: [demos]
+      summary: Get aggregate stats across all demos
+      responses:
+        "200":
+          description: Stats summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoStats"
+
+  /demos/{id}:
+    get:
+      operationId: getDemo
+      tags: [demos]
+      summary: Get a single demo with full detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Demo detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+    delete:
+      operationId: deleteDemo
+      tags: [demos]
+      summary: Delete a demo record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /demos/{id}/voice-presets:
+    get:
+      operationId: getDemoVoicePresets
+      tags: [demos]
+      summary: Get generated CS2 voice preset commands for a demo
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Voice preset commands
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VoicePreset"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get app settings
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+
+    put:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update app settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsInput"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +188,156 @@ components:
       required:
         - status
 
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Demo:
+      type: object
+      required: [id, filename, map, importedAt, status]
+      properties:
+        id:
+          type: integer
+        filename:
+          type: string
+        matchId:
+          type: ["string", "null"]
+        map:
+          type: string
+        importedAt:
+          type: string
+        status:
+          type: string
+          enum: [pending, ready, error]
+        team1Name:
+          type: ["string", "null"]
+        team2Name:
+          type: ["string", "null"]
+        playerCount:
+          type: integer
+
+    DemoDetail:
+      type: object
+      required: [id, filename, map, importedAt, status, players]
+      properties:
+        id:
+          type: integer
+        filename:
+          type: string
+        matchId:
+          type: ["string", "null"]
+        map:
+          type: string
+        importedAt:
+          type: string
+        status:
+          type: string
+          enum: [pending, ready, error]
+        team1Name:
+          type: ["string", "null"]
+        team2Name:
+          type: ["string", "null"]
+        players:
+          type: array
+          items:
+            $ref: "#/components/schemas/Player"
+
+    Player:
+      type: object
+      required: [id, steamId, name, slot, team]
+      properties:
+        id:
+          type: integer
+        steamId:
+          type: string
+        name:
+          type: string
+        slot:
+          type: integer
+        team:
+          type: integer
+
+    VoicePreset:
+      type: object
+      required: [label, description, command, indicesLow, indicesHigh]
+      properties:
+        label:
+          type: string
+        description:
+          type: string
+        command:
+          type: string
+        indicesLow:
+          type: integer
+        indicesHigh:
+          type: integer
+
+    DemoImportInput:
+      type: object
+      required: [filePath]
+      properties:
+        filePath:
+          type: string
+        map:
+          type: string
+        team1Name:
+          type: string
+        team2Name:
+          type: string
+
+    DemoStats:
+      type: object
+      required: [totalDemos, readyDemos, totalPlayers, maps]
+      properties:
+        totalDemos:
+          type: integer
+        readyDemos:
+          type: integer
+        totalPlayers:
+          type: integer
+        maps:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapCount"
+
+    MapCount:
+      type: object
+      required: [map, count]
+      properties:
+        map:
+          type: string
+        count:
+          type: integer
+
+    Settings:
+      type: object
+      required: [cs2Path, watchedFolders]
+      properties:
+        cs2Path:
+          type: ["string", "null"]
+        watchedFolders:
+          type: array
+          items:
+            type: string
+        autoImport:
+          type: boolean
+        replaysSubfolder:
+          type: string
+
+    SettingsInput:
+      type: object
+      properties:
+        cs2Path:
+          type: string
+        watchedFolders:
+          type: array
+          items:
+            type: string
+        autoImport:
+          type: boolean
+        replaysSubfolder:
+          type: string

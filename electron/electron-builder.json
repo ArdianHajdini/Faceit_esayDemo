@@ -1,0 +1,52 @@
+{
+  "appId": "com.faceit-demo-manager.app",
+  "productName": "FACEIT Demo Manager",
+  "copyright": "Copyright © 2026",
+  "directories": {
+    "output": "release",
+    "buildResources": "assets"
+  },
+  "files": [
+    "dist/**/*",
+    "node_modules/**/*",
+    "!node_modules/**/*.{md,txt}",
+    "!node_modules/.cache/**"
+  ],
+  "extraResources": [
+    {
+      "from": "../artifacts/demo-manager/dist",
+      "to": "app",
+      "filter": ["**/*"]
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "assets/icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "FACEIT Demo Manager"
+  },
+  "mac": {
+    "target": "dmg",
+    "icon": "assets/icon.icns",
+    "category": "public.app-category.utilities"
+  },
+  "linux": {
+    "target": "AppImage",
+    "icon": "assets/icon.png",
+    "category": "Utility"
+  }
+}
