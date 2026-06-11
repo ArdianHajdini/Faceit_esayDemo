@@ -6,16 +6,14 @@
   "scripts": {
     "build:main": "tsc -p tsconfig.main.json",
     "start": "electron .",
-    "dev": "concurrently \"pnpm run build:main\" \"wait-on http://localhost:5173 && electron .\"",
     "dist:win": "electron-builder --win --config electron-builder.json",
     "dist:mac": "electron-builder --mac --config electron-builder.json",
     "dist:linux": "electron-builder --linux --config electron-builder.json"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2",
+    "@types/node": "^22.0.0",
     "electron": "^33.4.0",
     "electron-builder": "^25.1.8",
-    "typescript": "~5.9.3",
-    "wait-on": "^8.0.3"
+    "typescript": "~5.9.3"
   }
 }

@@ -40,12 +40,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
-      - name: Install workspace dependencies
+      - name: Install all dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install Electron dependencies
-        working-directory: electron
-        run: pnpm install
 
       - name: Build frontend (demo-manager Vite app)
         env:
@@ -61,7 +57,7 @@ jobs:
         working-directory: electron
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm exec electron-builder --win --config electron-builder.json
+        run: pnpm run dist:win
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
