@@ -1,0 +1,53 @@
+> faceit-demo-manager@1.0.0 dist:win D:\a\Faceit_esayDemo\Faceit_esayDemo\electron
+> electron-builder --win --config electron-builder.json
+
+  • electron-builder  version=25.1.8 os=10.0.26100
+  • artifacts will be published if draft release exists  reason=CI detected
+  • loaded configuration  file=D:\a\Faceit_esayDemo\Faceit_esayDemo\electron\electron-builder.json
+  • executing @electron/rebuild  electronVersion=33.4.11 arch=x64 buildFromSource=false appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=33.4.11 appOutDir=release\win-unpacked
+  • downloading     url=https://github.com/electron/electron/releases/download/v33.4.11/electron-v33.4.11-win32-x64.zip size=115 MB parts=8
+  • downloaded      url=https://github.com/electron/electron/releases/download/v33.4.11/electron-v33.4.11-win32-x64.zip duration=532ms
+  • updating asar integrity executable resource  executablePath=release\win-unpacked\FACEIT Demo Manager.exe
+  ⨯ Cannot find module 'electron-publisher-never'
+Require stack:
+- D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\out\publish\PublishManager.js
+- D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\out\index.js
+- D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\electron-builder@25.1.8\node_modules\electron-builder\out\builder.js
+- D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\electron-builder@25.1.8\node_modules\electron-builder\out\cli\cli.js
+- D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\electron-builder@25.1.8\node_modules\electron-builder\cli.js  failedTask=build stackTrace=Error: Cannot find module 'electron-publisher-never'
+Require stack:
+- D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\out\publish\PublishManager.js
+- D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\out\index.js
+- D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\electron-builder@25.1.8\node_modules\electron-builder\out\builder.js
+- D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\electron-builder@25.1.8\node_modules\electron-builder\out\cli\cli.js
+- D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\electron-builder@25.1.8\node_modules\electron-builder\cli.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1500:15)
+    at wrapResolveFilename (node:internal/modules/cjs/loader:1071:27)
+    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1095:10)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1116:12)
+    at Module._load (node:internal/modules/cjs/loader:1285:25)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.require (node:internal/modules/cjs/loader:1600:12)
+    at require (node:internal/modules/helpers:153:16)
+    at requireProviderClass (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\publish\PublishManager.ts:353:18)
+    at getResolvedPublishConfig (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\publish\PublishManager.ts:512:25)
+    at D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\publish\PublishManager.ts:452:5
+From previous event:
+    at processImmediate (node:internal/timers:504:21)
+From previous event:
+    at resolvePublishConfigurations (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\publish\PublishManager.ts:451:33)
+    at getPublishConfigs (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\publish\PublishManager.ts:416:16)
+    at getAppUpdatePublishConfiguration (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\publish\PublishManager.ts:248:79)
+    at D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\publish\PublishManager.ts:118:35
+    at Packager.afterPack (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\packager.ts:560:29)
+    at WinPackager.doPack (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\platformPackager.ts:322:5)
+    at WinPackager.pack (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\platformPackager.ts:138:5)
+    at Packager.doBuild (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\packager.ts:459:9)
+    at executeFinally (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\builder-util@25.1.7\node_modules\builder-util\src\promise.ts:12:14)
+    at Packager.build (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\app-builder-lib@25.1.8_dmg-builder@25.1.8\node_modules\app-builder-lib\src\packager.ts:393:31)
+    at executeFinally (D:\a\Faceit_esayDemo\Faceit_esayDemo\node_modules\.pnpm\builder-util@25.1.7\node_modules\builder-util\src\promise.ts:12:14)
+ ELIFECYCLE  Command failed with exit code 1.
+Error: Process completed with exit code 1.
