@@ -28,5 +28,13 @@ git --no-optional-locks push \
 up-to-date" because the working-tree edits aren't committed yet. The checkpoint must
 land first.
 
+## Fine-grained token pitfall
+
+If the push returns `403 Permission denied to <owner>` even though the REST API
+shows `"push": true` in the repo permissions block, the token is a **fine-grained PAT**
+and the REST `permissions` reflects the *user's role*, not the token's grants.
+Fix: set **Repository permissions → Contents: Read and write** on the token, OR
+switch to a **classic token** with the `repo` scope (simpler, avoids this confusion).
+
 **How to apply:** Edit → end loop → user says "push" → run the PAT push. Never try to
 commit yourself; rely on the checkpoint.
