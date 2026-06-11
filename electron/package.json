@@ -2,6 +2,11 @@
   "name": "faceit-demo-manager",
   "version": "1.0.0",
   "description": "FACEIT Demo Manager for CS2 — manage demos, generate voice presets",
+  "author": "ArdianHajdini",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ArdianHajdini/Faceit_esayDemo.git"
+  },
   "main": "dist/main.js",
   "scripts": {
     "build:main": "tsc -p tsconfig.main.json",

@@ -19,6 +19,7 @@
       "filter": ["**/*"]
     }
   ],
+  "publish": "never",
   "win": {
     "target": [
       {
