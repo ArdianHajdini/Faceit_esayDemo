@@ -82,6 +82,8 @@ export interface DemoImportInput {
   map?: string;
   team1Name?: string;
   team2Name?: string;
+  /** ISO 8601 date from the file's last-modified time */
+  importedAt?: string;
 }
 
 export interface MapCount {

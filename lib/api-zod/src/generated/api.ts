@@ -40,7 +40,8 @@ export const ImportDemoBody = zod.object({
   "filePath": zod.string(),
   "map": zod.string().optional(),
   "team1Name": zod.string().optional(),
-  "team2Name": zod.string().optional()
+  "team2Name": zod.string().optional(),
+  "importedAt": zod.string().optional().describe('ISO 8601 date from the file\'s last-modified time')
 })
 
 

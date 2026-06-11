@@ -125,9 +125,15 @@ router.post("/demos", async (req, res) => {
     res.status(400).json({ error: "Invalid input" });
     return;
   }
-  const { filePath, map, team1Name, team2Name } = parsed.data;
+  const { filePath, map, team1Name, team2Name, importedAt } = parsed.data;
 
   const filename = filePath.split(/[/\\]/).pop() ?? filePath;
+
+  // Use the file's real modification time if provided; fall back to now
+  const importedAtDate =
+    importedAt && !Number.isNaN(Date.parse(importedAt))
+      ? new Date(importedAt)
+      : new Date();
 
   try {
     const [demo] = await db
@@ -138,6 +144,7 @@ router.post("/demos", async (req, res) => {
         status: "ready",
         team1Name: team1Name ?? null,
         team2Name: team2Name ?? null,
+        importedAt: importedAtDate,
       })
       .returning();
 
