@@ -1,0 +1,99 @@
+Zukunftsfähige lokale FACEIT-Demo-App für CS2
+Kurzfazit
+Ja, die App ist heute technisch machbar, und zwar in einer Form, die später sauber auf Statistik-Features wie K/D, Headshot-Metriken, Utility-Daten, Sichtbarkeitsanalysen und sogar Counter-Strafe-Auswertungen erweitert werden kann. Der sinnvollste Weg ist keine tiefe CS2-Plugin- oder Ingame-Integration, sondern eine lokal laufende Desktop-App, die Downloads überwacht, komprimierte FACEIT-Demos automatisch entpackt, sie in einen verwalteten Replay-Ordner unter CS2 legt, die Demo analysiert und dem Nutzer fertige Start-Kommandos oder Alias-Dateien für ohne Voice, alle Stimmen oder Team A / Team B / einzelner Spieler erzeugt. Dieser Ansatz ist robuster, updatefreundlicher und deutlich weniger fragil als Lösungen, die direkt in die Spielsteuerung eingreifen. 
+
+Wenn du ein Setup mit echtem Zukunftspotenzial willst, würde ich Tauri als Desktop-Shell, einen separaten Parser-Service als Sidecar-Binary, SQLite für App-Metadaten und Parquet plus DuckDB für spätere Analytik empfehlen. Für Monetarisierung passt Gumroad Membership + License-Verify-Flow sehr gut zu einem lokalen Tool, solange du das Verkäufer-Token nicht in die Desktop-App einbaust. 
+
+Was heute technisch realistisch ist
+FACEIT selbst beschreibt den Basisablauf offiziell so: Demo im Matchroom herunterladen, beachten, dass die Demo nur für einen begrenzten Zeitraum verfügbar ist, komprimierte Datei entpacken und danach in CS2 laden. FACEIT nennt dabei explizit einen manuellen Entpack-Schritt und verweist auf den CS2-Spielpfad unter ...\game\csgo, bevor die Demo mit playdemo geladen wird. Für ein Produkt ist das ideal, weil deine App genau diesen nervigen Mittelteil automatisieren kann, ohne dass der Nutzer mehr tun muss als auf „Watch Demo“ bzw. „Download Demo“ zu klicken. 
+
+Für die Voice-Seite ist der relevante Punkt: CS2 besitzt die ConVars tv_listen_voice_indices und tv_listen_voice_indices_h. Laut aktueller Command-Dumps sind das die unteren und oberen 32 Bit eines Bitfelds von Player-Slots, die beim SourceTV-Demoplayback gehört werden sollen. In der Praxis ist -1 für beide Werte der bekannte „alle Stimmen an“-Fall. Genau daraus lässt sich eine saubere UX bauen: Dein Tool muss dem User nicht mehr binäre Rechner oder reverse Slot-Math zeigen, sondern nur Buttons wie „Alle“, „Mein Team“, „Gegner“, „Nur Player X“. 
+
+Wichtig ist zugleich die Einschränkung: Voice-Daten sind nicht in allen Demo-Arten gleich verfügbar. Das Referenzprojekt CS2VoiceData hält ausdrücklich fest, dass Valve-Matchmaking-Demos keine Voice-Audiodaten enthalten. Gleichzeitig existieren mehrere Community-Tools speziell für SourceTV / FACEIT-Demos, die Voice-Playback oder Voice-Extraktion adressieren. Das heißt für dein Produkt: Voice-Fokus auf FACEIT/SourceTV ist sinnvoll; du solltest aber im UI transparent kennzeichnen, dass Voice nicht für jede Demo-Art garantiert vorhanden ist. 
+
+Es gibt außerdem schon Marktvalidierung für genau deine Problemstellung. Es existieren bereits kleine Point-Solutions für das automatische Entpacken von FACEIT-Demos, Voice-Bitfield-Rechner und Demo-Manager mit Team-/Player-Voice-Filtern. Das spricht nicht gegen deine Idee, sondern zeigt, dass Nachfrage da ist. Der Unterschied für ein bezahltes Produkt muss deshalb nicht „auch entpacken können“ sein, sondern ein stabiler End-to-End-Workflow plus Ausbaupfad zu Analytics. 
+
+Empfohlene Architektur mit Zukunftspotenzial
+Die aus meiner Sicht beste Zielarchitektur ist Tauri als lokale Desktop-App mit Sidecar-Parser-Service. Tauri ist heute ein sehr guter Fit, weil es kleine Binaries, tiefe Systemintegration, Windows-Installer, Updater, Tray-Funktionen, Dateidialoge und kontrolliertes Öffnen lokaler Pfade oder externer Prozesse unterstützt. Gleichzeitig arbeitet Tauri mit einem expliziten Permissions-Modell, was für ein Tool, das auf Downloads-Ordner, CS2-Verzeichnisse, Copy/Move und externe Binaries zugreifen muss, ein echter Vorteil ist. 
+
+Für den Parser-Service würde ich nicht alles in den Tauri-Frontend-Code drücken, sondern eine klare Service-Grenze ziehen. Tauri unterstützt das Einbetten externer Binaries als Sidecars; genau dafür ist das Modell gedacht. Für dein Produkt ist das stark, weil du so die App-Oberfläche, Dateiverwaltung, Lizenzierung und UI stabil halten kannst, während du den Parser separat aktualisierst, sobald Valve eine Demo-Struktur ändert. Diese Isolation ist bei CS2 besonders wichtig, weil existierende Tools und Demo-Manager ausdrücklich darauf hinweisen, dass Valve-Demoformate und spielnahe Integrationen nach Updates brechen können. 
+
+Für die Parsing-Schicht halte ich eine zweigleisige Strategie für am sinnvollsten. Produktiv würde ich einen Go-basierten Parser-Sidecar rund um demoinfocs-golang bevorzugen, weil die Bibliothek sich selbst als „production ready“ positioniert und es bereits Referenzprojekte gibt, die daraus Voice-Audio aus CS2-Demos ziehen. Für Analytics-R&D würde ich zusätzlich Awpy und demoparser2 im Werkzeugkasten behalten, weil dort schon heute Parsing-, Stats-, Visibility- und NAV-Workflows dokumentiert sind und Awpy inzwischen demoparser2 als Backend nutzt. So bekommst du eine stabile Produktbasis und gleichzeitig einen sehr schnellen Weg, neue Statistikideen im Prototype zu testen. 
+
+Für lokale Persistenz solltest du zwei Ebenen trennen. SQLite ist ideal für App-Staat, Demo-Liste, Einstellungen, Gumroad-Lizenzstatus, Pfadkonfiguration, letzte Imports und Voice-Presets, weil es eingebettet ist, keinen separaten Server hat und in einer Datei lebt. Für große Tick-/Event-/Shot-/Damage-Daten ist dagegen Parquet plus DuckDB langfristig besser, weil DuckDB Parquet direkt lokal und parallel abfragen kann und dabei Filter/Projektionen in den Scan pusht. Genau das macht später Dashboards und Statistiken viel einfacher, ohne dass du in einer frühen Phase schon ein komplexes Server-Backend bauen musst. 
+
+Ein praktikables Zielbild sieht so aus:
+
+text
+Kopieren
+FACEIT-Download
+   -> Datei-Watcher
+   -> Entpacken / Dateinamen säubern
+   -> Demo nach CS2\game\csgo\replays kopieren
+   -> Parser-Sidecar analysiert Header, Roster, Teams, Events, Ticks, Voice-Mapping
+   -> SQLite speichert Demo-Metadaten + UI-Status
+   -> Parquet speichert große Analyse-Tabellen
+   -> App erzeugt fertige Commands / cfg-Aliases
+   -> Nutzer klickt nur noch: "Alle Stimmen", "Mein Team", "Gegner", "Ohne Voice", "Ordner öffnen", "In CS2 starten"
+Dieses Modell ist lokal, updatebar und lässt dir später Raum für tiefergehende Features wie 2D-Replay, Round-Timeline, Utility-Analyse und Voice-Transkription. 
+
+Demo-Import, Replay-Ordner und Voice-Kommandos
+Der Import-Workflow sollte so gebaut werden, dass er für den Nutzer praktisch „unsichtbar“ wird. Technisch brauchst du einen Datei-Watcher auf dem Downloads-Ordner und zusätzlich die Möglichkeit, weitere überwachte Ordner oder eine manuelle Dateiauswahl zu konfigurieren. Genau das decken notify für Dateisystem-Änderungen und Tauri-Dialoge gut ab. Wichtig ist, dass du nicht ein einziges FACEIT-Archivformat hart annimmst, weil FACEIT offiziell nur sagt, dass Demos komprimiert sind; dein Importer sollte also mehrformatig denken und das Entpacken in einer isolierten Schicht lösen. 
+
+Beim Zielpfad würde ich die Demos in einem verwalteten Unterordner unter CS2 ablegen, also praktisch ...\game\csgo\replays\..., und die App zusätzlich einen „Replay-Ordner öffnen“-Button anbieten lassen. Der wichtige Grund: playdemo unterstützt explizit den relativen Pfad replays/<demo>. Damit bekommt der Nutzer einen sauberen, aufgeräumten Bereich nur für importierte FACEIT-Demos und kann diese später schnell löschen. Ich würde außerdem jeden Dateinamen auf ASCII / Basic Latin normalisieren, weil aktuelle Demo-Playback-Dokumentation darauf hinweist, dass CS2 Demos aus Pfaden mit Nicht-Basic-Latin-Zeichen nicht zuverlässig abspielt. Das ist ein überraschend wichtiger Produktdetailpunkt. 
+
+Für die Voice-Steuerung solltest du das Problem im Produkt nicht als „binären Taschenrechner“ präsentieren, sondern als Presets. Grundlage sind die beiden CS2-ConVars für Low-/High-Bitfelder. „Alle Stimmen“ ist der einfache Fall mit -1 und -1. „Ohne Voice“ ist 0 und 0. Für Team- oder Spielerfilter bildet dein Parser aus den betroffenen Player-Slots zwei Masken: Slots 0–31 gehen in tv_listen_voice_indices, Slots 32–63 in tv_listen_voice_indices_h. Weil die Konsole diese Werte praktisch als signed Int32 behandelt, muss dein Rechner Werte oberhalb von 2^31-1 in die entsprechende negative Dezimaldarstellung umwandeln. Genau diese unangenehme Umrechnung gehört in die App und nicht zum Nutzer. 
+
+Ein von der App generierter Output kann dann so aussehen:
+
+text
+Kopieren
+Ohne Voice
+tv_listen_voice_indices 0; tv_listen_voice_indices_h 0; playdemo replays/match_abc.dem
+
+Alle Stimmen
+tv_listen_voice_indices -1; tv_listen_voice_indices_h -1; playdemo replays/match_abc.dem
+
+Team A
+tv_listen_voice_indices 12345678; tv_listen_voice_indices_h 0; playdemo replays/match_abc.dem
+Die ConVars und das playdemo-Verhalten sind dokumentiert; die konkreten Team-Masken wären in deinem Produkt das Ergebnis deiner Slot-Zuordnung. 
+
+Ein besonders gutes UX-Detail ist, nicht nur Kommandozeilen auszugeben, sondern zusätzlich eine kleine .cfg-Datei zu schreiben, etwa demohelper_last.cfg, die Aliases wie voice_all, voice_team_a, voice_team_b, voice_<steamid> und demo_start definiert. CS2 unterstützt den alias-Befehl, und etablierte Tools wie CS Demo Manager arbeiten bereits mit genau solchen Voice-Aliases. Damit kannst du den Nutzer von kryptischen Zahlen wegbringen und in Richtung „sprechender“ Kommandos schieben. 
+
+Für die Team-Logik solltest du im UI kein nacktes „CT“ und „T“ anzeigen, sondern Roster-basierte Teams oder ausdrücklich „Startseite Team A / Startseite Team B“. CS Demo Manager weist selbst darauf hin, dass seine voice_ct- und voice_t-Aliases sich auf die Startseite beziehen, nicht auf die aktuelle Seite nach dem Seitenwechsel. Für Coaches und Review-Workflows ist das eine wichtige semantische Unterscheidung. Deine App kann das besser lösen, indem sie Teams nach Roster, Playernamen und SteamID64 labelt. 
+
+Wenn du die Voice-Ebene später ausbauen willst, ist auch separate Voice-Extraktion nach SteamID realistisch. Es gibt Referenzcode und Tools, die Player-Voices aus passenden CS2-Demos in WAV-Dateien exportieren oder getrennt nach Spielern ausgeben. Ich würde das aber nicht in das erste kostenpflichtige Release ziehen. Für dein MVP reicht es völlig, die Ingame-Voice-Kommandos sauber zu automatisieren; WAV-Export, Transkription und semantische Kommunikationsanalyse sind starke spätere Ausbaupunkte. 
+
+Gumroad-Abo und Lizenzierung
+Für dein Abo-Modell ist Gumroad technisch gut genug, solange du den Flow sauber trennst. Gumroad unterstützt Memberships/Subscriptions, mehrere Billing-Frequenzen und ausdrücklich auch Tier-Modelle, etwa unterschiedliche Software-Lizenzstufen wie „Individual“ und „Team“. Für dein Produkt würde ich mindestens ein Solo-Tier und ein Team-/Coach-Tier einplanen. Monthly und annual reichen meist als Start; Gumroad unterstützt darüber hinaus auch weitere Intervalle. 
+
+Der sauberste MVP-Lizenzfluss ist: Beim ersten Start klickt der Nutzer auf „Lizenz kaufen“, die App öffnet deine Gumroad-Checkout-Seite im Browser, nach dem Kauf trägt der Nutzer E-Mail + Lizenzschlüssel in der App ein, und die App prüft den Schlüssel über Gumroads License-Verify-Endpoint. Der offizielle Help-Center-Snippet zeigt genau diesen Flow mit product_id, license_key und optional increment_uses_count=false; die Response enthält unter anderem Informationen wie success, purchase, refunded, disputed, subscription_id, subscription_cancelled_at, subscription_ended_at, subscription_failed_at, recurrence, is_multiseat_license und quantity. Das ist für ein lokales Software-Abo bereits erstaunlich brauchbar. 
+
+Für die Desktop-App heißt das konkret: Du kannst direkt gegen Verify prüfen, solltest aber dein Gumroad-Access-Token niemals in die Client-App packen. Gumroad sagt selbst, dass ein Access-Token wie ein Passwort geheim gehalten werden muss. Deshalb ist der richtige Schnitt: Verify direkt im Client für MVP, alles was Verkäuferkonto, Webhooks, erweiterte Sales-Logik oder Seat-Management im Detail betrifft, später in einen kleinen eigenen Backend-Dienst auslagern. 
+
+Lokal würde ich den aktivierten Lizenzstatus nicht nur im Klartext in einer JSON-Datei speichern, sondern in einer sicheren lokalen Ablage. Tauri bietet dafür mit Stronghold einen offiziellen Mechanismus für Secret-Management; für normalen persistenten, nicht geheimen App-Zustand gibt es zusätzlich ein Store-Plugin. Praktisch heißt das: sensibler Lizenz-Cache oder Session-Token in Stronghold, gewöhnliche UI-Einstellungen eher in Store oder SQLite. 
+
+Produktseitig würde ich nicht versuchen, mit Gumroad im MVP „perfekten Kopierschutz“ zu erzwingen. Realistisch ist ein Modell mit lokaler Aktivierung, regelmäßiger Re-Validierung, kleiner Offline-Gnadenfrist und freundlicher, aber klarer Deaktivierung, wenn Abo oder Refund-Status das verlangen. Für ein lokales Coaching-/Replay-Tool ist das in der Praxis meist besser als ein aggressives Online-Lockdown-Modell. Die technische Grundlage liefert dir Gumroad; die Gerätebindung und Missbrauchslogik wären dein eigener Zusatz, falls du sie später brauchst. 
+
+Datenmodell für spätere Statistiken
+Wenn du jetzt schon an K/D, Headshot Accuracy und Counter-Strafe denkst, solltest du das Datenmodell ab Tag eins analytikfreundlich bauen. Minimal brauchst du Entitäten für Demo, Match, Player, Roster/Team, Round, VoicePreset, ImportJob und LicenseState in SQLite. Die eigentlichen großen Analyse-Tabellen – also Kills, Damages, Shots, Grenades, Smokes, Infernos, Ticks und optionale Voice-Segmente – würde ich dateibasiert als Parquet ablegen. So bleibt die App schnell und du verbrennst dir die Zukunft nicht durch ein zu enges, nur auf den MVP zugeschnittenes Schema. 
+
+Die gute Nachricht ist: Die Rohdaten für spätere Stats sind schon heute in den gängigen Parsing-Stacks vorhanden. Awpy dokumentiert unter anderem eigene Tabellen für kills, damages, shots, footsteps und ticks; in den Game-Events von CS2 sind außerdem Merkmale wie headshot, hitgroup, distance, attackerblind, thrusmoke und player_footstep dokumentiert. Das reicht locker für klassische Post-Match-Analytics und für deutlich „coachigeres“ Material. 
+
+K/D ist trivial: Kills und Deaths aus der Kill-Tabelle. Headshot-Quote solltest du produktseitig sauber definieren, weil es dafür mehrere sinnvolle Interpretationen gibt: entweder Headshot-Kills / Kills oder Headshot-Hits / alle Treffer. Beides ist technisch ableitbar, denn player_death enthält das Headshot-Flag, und player_hurt enthält den hitgroup. Der wichtige Produktpunkt ist also weniger die Machbarkeit als die saubere Benennung im UI, damit der Nutzer genau weiß, was du misst. 
+
+Counter-Strafe ist machbar, aber als Metrik definitionssensibel. Der robuste Weg ist, sie als abgeleitete Kennzahl aus Tick-Daten und Shot-Zeitpunkten zu berechnen, also zum Beispiel als Zeitspanne zwischen Bewegungsreduktion bzw. Richtungswechsel und Schussabgabe. Da Awpy/demoparser Tick- und Shot-Ebenen bereitstellen, ist dieser Weg grundsätzlich offen. Zusätzlich ist im demoparser-Ökosystem sogar explizit ein buttons_bitfield-Beispiel vorhanden, was für spätere, input-nähere Forschungsvarianten interessant ist. Das ist für mich ein starkes Argument, dein Format und deine Analyse-API von Anfang an so zu gestalten, dass du Rohdaten später neu auswerten kannst, statt nur fertige Kennzahlen zu speichern. 
+
+Über die von dir genannten Metriken hinaus ist die Roadmap sehr breit: Awpy dokumentiert bereits ADR, KAST und Rating, außerdem Visibility und Navigation-Mesh-Workflows. In der Praxis bedeutet das, dass du aus derselben lokalen Demo-Pipeline später nicht nur Basis-Stats, sondern auch Entry-Erfolg, Trading, Spacing, Map-Control, Utility-Effizienz und Sichtkontakt-Events ableiten kannst. Genau deshalb lohnt es sich, jetzt eine zukunftsfähige Architektur und kein Wegwerf-MVP zu bauen. 
+
+Risiken, Grenzen und die sinnvollste Roadmap
+Das größte technische Risiko ist nicht Gumroad und auch nicht der Datei-Watcher, sondern die Brüchigkeit des Demo-Ökosystems nach CS2-Updates. Bestehende Demo-Tools weisen explizit darauf hin, dass Valve die Demo-Struktur ändert, Parser nachgezogen werden müssen und spielnahe Plugins oder Playback-Integrationen dadurch zeitweise inkompatibel werden oder sogar Crashes verursachen können. Genau deshalb rate ich dir davon ab, dein Kernversprechen an eine fragile Ingame-Steuerung zu koppeln. Lass deine App Demos vorbereiten, analysieren und Kommandos/CFGs erzeugen – aber halte die CS2-Anbindung so dünn wie möglich. 
+
+Ein zweites Risiko ist die Uneinheitlichkeit der Demo-Inhalte. FACEIT sagt offiziell nur, dass Demos komprimiert ausgeliefert werden; Community-Tools rund um FACEIT-Demo-Automation arbeiten mit unterschiedlichen Archivrealitäten. Hinzu kommt, dass Voice-Verfügbarkeit vom Demotyp abhängt und Valve-Matchmaking-Demos laut Voice-Referenzprojekt keine Voice-Audiodaten enthalten. Deshalb sollte dein Importer tolerant und dein UI ehrlich sein: klare Kennzeichnung, wenn eine Demo nur Playback ohne Voice-Preset erlaubt oder wenn Audio zwar extrahierbar ist, aber nicht vollständig. 
+
+Die sinnvollste Produktreihenfolge wäre aus meiner Sicht folgende. Erstes Release: lokaler Importer, Watcher, Entpacken, automatisches Kopieren in replays, Replay-Ordner öffnen, Demo löschen, Voice-Presets berechnen, Kommando kopieren, Gumroad-Aktivierung. Danach: Alias-/CFG-Generierung, saubere Team-/Player-Auswahl, Roster-Ansicht mit Name, SteamID64, Team und Slot, plus robuster Fehlerdialog bei nicht abspielbaren Demos oder problematischen Pfaden. Danach erst: Statistik-Dashboards, Voice-Extraktion, Transkription und optional ein späterer „Matchroom-URL-Import“ über die offiziellen FACEIT-APIs statt über Browser-Scraping. FACEIT bietet dafür Data API, Downloads API und Webhooks wie „Match Demo Ready“ – aber das ist eine spätere Komfortstufe, keine Voraussetzung für ein gutes lokales Produkt. 
+
+Mein klares Architektururteil lautet deshalb: Windows-first, lokal-first, Tauri + Sidecar + SQLite/Parquet/DuckDB + Gumroad Membership/License Verify. Das ist die Variante mit dem besten Verhältnis aus Umsetzbarkeit heute, Wartbarkeit nach CS2-Updates und echtem Ausbaupotenzial für Statistiken morgen. Die Idee selbst ist tragfähig; der Schlüssel zum Erfolg ist, dass du nicht nur „Demo in Ordner schieben“ verkaufst, sondern einen sauberen Review-Workflow und danach eine Analytics-Plattform für FACEIT-Demos aufbaust. 
+
+Offene Fragen und Grenzen
+Ein paar Punkte bleiben vor der Umsetzung bewusst offen. Erstens hängt die automatische Team-/Player-Voice-Maskierung davon ab, wie stabil dein gewählter Parser die für Slot-Mapping nötigen Identifikatoren aus der Demo bereitstellt; falls diese Ebene in einzelnen Demos unvollständig ist, brauchst du einen Fallback. Zweitens ist die Voice-Abdeckung demoabhängig; Valve-Matchmaking ist hier klar eingeschränkt, bei FACEIT/SourceTV ist die Lage besser, aber nicht für jeden Server gleich. Drittens muss die App beim Import auf ASCII-sichere Dateinamen und auf Archivvarianten vorbereitet sein. Und viertens solltest du damit rechnen, dass du nach einzelnen CS2-Patches den Parser-Sidecar schneller aktualisieren musst als die UI. Diese Grenzen sprechen aber nicht gegen das Produkt – sie sprechen nur dafür, es architektonisch sauber und modular aufzubauen. 
