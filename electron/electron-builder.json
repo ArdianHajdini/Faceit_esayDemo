@@ -29,8 +29,7 @@
         "target": "portable",
         "arch": ["x64"]
       }
-    ],
-    "icon": "assets/icon.ico"
+    ]
   },
   "nsis": {
     "oneClick": false,
@@ -41,12 +40,10 @@
   },
   "mac": {
     "target": "dmg",
-    "icon": "assets/icon.icns",
     "category": "public.app-category.utilities"
   },
   "linux": {
     "target": "AppImage",
-    "icon": "assets/icon.png",
     "category": "Utility"
   }
 }

@@ -4,14 +4,12 @@
   "description": "FACEIT Demo Manager for CS2 — manage demos, generate voice presets",
   "main": "dist/main.js",
   "scripts": {
-    "build:frontend": "pnpm --filter @workspace/demo-manager run build",
     "build:main": "tsc -p tsconfig.main.json",
-    "build": "pnpm run build:frontend && pnpm run build:main",
     "start": "electron .",
     "dev": "concurrently \"pnpm run build:main\" \"wait-on http://localhost:5173 && electron .\"",
-    "dist:win": "pnpm run build && electron-builder --win --config electron-builder.json",
-    "dist:mac": "pnpm run build && electron-builder --mac --config electron-builder.json",
-    "dist:linux": "pnpm run build && electron-builder --linux --config electron-builder.json"
+    "dist:win": "electron-builder --win --config electron-builder.json",
+    "dist:mac": "electron-builder --mac --config electron-builder.json",
+    "dist:linux": "electron-builder --linux --config electron-builder.json"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
@@ -19,8 +17,5 @@
     "electron-builder": "^25.1.8",
     "typescript": "~5.9.3",
     "wait-on": "^8.0.3"
-  },
-  "dependencies": {
-    "better-sqlite3": "^11.5.0"
   }
 }
