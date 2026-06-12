@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { loadSettings } from "@/services/storage";
+import { loadSettings, loadDemos } from "@/services/storage";
 import {
   importDemoFromPath,
   buildDemoFromFile,
@@ -81,10 +81,7 @@ export default function ImportDemo() {
       const created = demos.find((d) => d.filepath === base.filepath);
       setImportedName(file.name);
       toast({ title: "Demo added", description: file.name });
-      setTimeout(() => {
-        if (created) setLocation(`/demos/${created.id}`);
-        else setLocation("/");
-      }, 600);
+      setTimeout(() => setLocation("/"), 600);
     } catch {
       toast({
         title: "Import failed",
@@ -126,7 +123,7 @@ export default function ImportDemo() {
       const fileName = path.split(/[/\\]/).pop() ?? path;
       setImportedName(fileName);
       toast({ title: "Demo imported", description: fileName });
-      setTimeout(() => setLocation(`/demos/${demo.id}`), 600);
+      setTimeout(() => setLocation("/"), 600);
     } catch (err) {
       toast({
         title: "Import failed",
@@ -197,7 +194,20 @@ export default function ImportDemo() {
 
     setProgress({ current: 0, total, errors: 0, skipped: 0 });
 
+    const existingDemos = loadDemos();
+
     for (const candidate of candidates) {
+      // Skip demos already present in the library (same destination filename)
+      const baseName = candidate.filename.replace(/\.(gz|zst)$/i, "");
+      const alreadyImported = existingDemos.some(
+        (d) => d.filename === baseName || d.filepath.toLowerCase().endsWith(baseName.toLowerCase()),
+      );
+      if (alreadyImported) {
+        skipped++;
+        setProgress({ current: imported + skipped + errors, total, errors, skipped });
+        continue;
+      }
+
       try {
         await importDemoFromPath(
           candidate.filepath,
@@ -206,9 +216,6 @@ export default function ImportDemo() {
         );
         imported++;
       } catch {
-        // If the file already exists at the destination it counts as skipped,
-        // otherwise it's a real error. We can't distinguish easily here so we
-        // count everything as an error for transparency.
         errors++;
       }
       setProgress({ current: imported + skipped + errors, total, errors, skipped });
@@ -362,7 +369,7 @@ export default function ImportDemo() {
               variant="outline"
               className="w-full gap-2"
               onClick={handleScan}
-              disabled={!tauri || !downloadsConfigured || isImportingAll}
+              disabled={!tauri || isImportingAll}
             >
               <ScanLine className="w-4 h-4" />
               Scan for Demos
