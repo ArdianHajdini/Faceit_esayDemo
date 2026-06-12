@@ -77,8 +77,7 @@ export default function ImportDemo() {
     setImportedName(null);
     try {
       const base = buildDemoFromFile(file, settings.demoDirectory || "demos");
-      const demos = addDemoToLibrary(base);
-      const created = demos.find((d) => d.filepath === base.filepath);
+      addDemoToLibrary(base);
       setImportedName(file.name);
       toast({ title: "Demo added", description: file.name });
       setTimeout(() => setLocation("/"), 600);
@@ -137,14 +136,19 @@ export default function ImportDemo() {
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
     if (tauri) {
-      // In Tauri we can't get a real path from a dropped File — fall back to browser import
-      importFile(file);
-    } else {
-      importFile(file);
+      // Tauri's webview does not expose real filesystem paths via the browser File API.
+      // Dropped files cannot be copied/extracted to the demo directory this way.
+      // Direct the user to the Browse button instead.
+      toast({
+        title: "Use the Browse button",
+        description: "Drag-and-drop does not work in the desktop app — click Browse to pick a file.",
+        variant: "destructive",
+      });
+      return;
     }
+    const file = e.dataTransfer.files[0];
+    if (file) importFile(file);
   }
 
   // ─────────────────────────────────────────
@@ -155,9 +159,10 @@ export default function ImportDemo() {
     if (!settings.downloadsFolder) {
       toast({
         title: "Downloads folder not configured",
-        description: "Set it in Settings first.",
+        description: "Go to Settings and set your Downloads folder path first.",
         variant: "destructive",
       });
+      setLocation("/settings");
       return;
     }
 
@@ -166,9 +171,19 @@ export default function ImportDemo() {
     setProgress(null);
     try {
       const result = await scanDownloadsFolder(settings.downloadsFolder);
+
+      if (result.errors.length > 0) {
+        toast({
+          title: "Scan completed with errors",
+          description: result.errors.slice(0, 2).join(" · "),
+          variant: "destructive",
+        });
+      }
+
       setCandidates(result.candidates);
       setScanState("ready");
-      if (result.candidates.length === 0) {
+
+      if (result.candidates.length === 0 && result.errors.length === 0) {
         toast({
           title: "No demos found",
           description: `No .dem / .gz / .zst files found in ${settings.downloadsFolder}`,
