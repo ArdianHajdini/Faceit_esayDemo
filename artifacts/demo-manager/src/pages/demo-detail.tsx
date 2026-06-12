@@ -13,17 +13,20 @@ import {
   CheckCircle2,
   Users,
   Loader2,
+  Play,
+  Settings,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { loadDemos } from "@/services/storage";
+import { loadDemos, loadSettings } from "@/services/storage";
 import { formatFileSize } from "@/services/demoService";
 import {
   isTauri,
   tauriParseDemoPlayers,
+  tauriLaunchCS2,
   type TauriDemoPlayer,
 } from "@/services/tauriBridge";
 import {
@@ -34,7 +37,7 @@ import {
   VOICE_OPTIONS,
   buildRosters,
   getPlayersToHear,
-  buildVoiceCommands,
+  buildFullPlayCommand,
 } from "@/services/voiceService";
 
 async function loadPlayers(filepath: string): Promise<TauriDemoPlayer[]> {
@@ -71,8 +74,16 @@ export default function DemoDetail() {
   const { toast } = useToast();
 
   const [copiedPreset, setCopiedPreset] = useState<string | null>(null);
+  const [launchingPreset, setLaunchingPreset] = useState<string | null>(null);
 
   const demo = useMemo(() => loadDemos().find((d) => d.id === id) ?? null, [id]);
+  const settings = useMemo(() => loadSettings(), []);
+
+  // CS2's playdemo expects "replays/<name>" without the .dem extension
+  const playdemoArg = useMemo(
+    () => demo ? `replays/${demo.filename.replace(/\.dem$/i, "")}` : "",
+    [demo],
+  );
 
   const { data: players, isLoading: loadingPlayers } = useQuery({
     queryKey: ["players", demo?.filepath],
@@ -87,7 +98,7 @@ export default function DemoDetail() {
       mode: opt.mode,
       label: opt.label,
       description: opt.description,
-      command: buildVoiceCommands(opt.mode, toHear),
+      command: buildFullPlayCommand(playdemoArg, opt.mode, toHear),
     };
   });
 
@@ -95,10 +106,47 @@ export default function DemoDetail() {
     navigator.clipboard.writeText(command);
     setCopiedPreset(label);
     toast({
-      title: "Command copied!",
-      description: `CS2 voice preset "${label}" copied to clipboard.`,
+      title: "In Zwischenablage kopiert",
+      description: `Preset "${label}" — einfügen in die CS2-Konsole.`,
     });
     setTimeout(() => setCopiedPreset(null), 2000);
+  };
+
+  const handleLaunchCS2 = async (command: string, label: string) => {
+    if (!settings.cs2Path) {
+      toast({
+        title: "CS2-Pfad nicht konfiguriert",
+        description: "Gehe zu den Einstellungen und hinterlege den CS2-Pfad.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setLaunchingPreset(label);
+    try {
+      // Copy full command to clipboard as safety fallback
+      await navigator.clipboard.writeText(command);
+      const result = await tauriLaunchCS2(settings.cs2Path, playdemoArg);
+      if (result.status === "launched") {
+        toast({
+          title: "CS2 wird gestartet",
+          description: `Demo läuft mit Preset "${label}". Befehl auch in der Zwischenablage.`,
+        });
+      } else {
+        toast({
+          title: "CS2 konnte nicht gestartet werden",
+          description: "Befehl wurde in die Zwischenablage kopiert — bitte manuell in die Konsole einfügen.",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({
+        title: "Fehler beim Starten",
+        description: "Befehl in die Zwischenablage kopiert als Fallback.",
+        variant: "destructive",
+      });
+    } finally {
+      setTimeout(() => setLaunchingPreset(null), 2000);
+    }
   };
 
   if (!demo) {
@@ -251,12 +299,14 @@ export default function DemoDetail() {
                 Voice Presets
               </CardTitle>
               <CardDescription className="text-xs">
-                Copy these commands into your CS2 console to filter voice chat during demo playback.
+                Vollständiger Befehl inkl. <code className="font-mono">playdemo</code> — kopieren oder direkt in CS2 starten.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 space-y-4">
               {presets.map((preset) => {
                 const available = preset.command !== null;
+                const isCopied = copiedPreset === preset.label;
+                const isLaunching = launchingPreset === preset.label;
                 return (
                   <div key={preset.label} className="group">
                     <div className="flex justify-between items-end mb-1.5">
@@ -264,32 +314,71 @@ export default function DemoDetail() {
                       <span className="text-[10px] text-muted-foreground uppercase tracking-wider text-right max-w-[55%]">{preset.description}</span>
                     </div>
                     <div className="relative">
-                      <div className="bg-background border border-border rounded p-3 pr-12 font-mono text-xs text-muted-foreground break-all overflow-hidden max-h-24 hover:text-foreground transition-colors cursor-text selection:bg-primary/30">
-                        {available ? preset.command : "Not available — no voice slots parsed for this team."}
+                      <div className={`bg-background border border-border rounded p-3 font-mono text-xs text-muted-foreground break-all overflow-hidden max-h-24 hover:text-foreground transition-colors cursor-text selection:bg-primary/30 ${isTauri() ? "pr-20" : "pr-12"}`}>
+                        {available ? preset.command : "Nicht verfügbar — keine Voice-Slots für dieses Team gefunden."}
                       </div>
+
+                      {/* Copy button */}
                       <Button
                         size="icon"
                         variant="secondary"
                         disabled={!available}
-                        className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 border border-border shadow-sm transition-all duration-200 ${
-                          copiedPreset === preset.label
+                        className={`absolute top-1/2 -translate-y-1/2 w-8 h-8 border border-border shadow-sm transition-all duration-200 ${isTauri() ? "right-10" : "right-1.5"} ${
+                          isCopied
                             ? "bg-green-500/20 text-green-500 border-green-500/50 hover:bg-green-500/30 hover:text-green-400"
                             : "hover:bg-primary hover:text-primary-foreground hover:border-primary"
                         }`}
                         onClick={() => available && handleCopy(preset.command as string, preset.label)}
                         data-testid={`btn-copy-${preset.label.replace(/\s+/g, "-").toLowerCase()}`}
-                        title="Copy to console"
+                        title="In Zwischenablage kopieren"
                       >
-                        {copiedPreset === preset.label ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                        {isCopied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                       </Button>
+
+                      {/* Launch in CS2 button — desktop only */}
+                      {isTauri() && (
+                        <Button
+                          size="icon"
+                          variant="secondary"
+                          disabled={!available || isLaunching}
+                          className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 border border-border shadow-sm transition-all duration-200 ${
+                            isLaunching
+                              ? "bg-primary/20 text-primary border-primary/50"
+                              : !settings.cs2Path
+                              ? "opacity-40 cursor-not-allowed"
+                              : "hover:bg-primary hover:text-primary-foreground hover:border-primary"
+                          }`}
+                          onClick={() => available && handleLaunchCS2(preset.command as string, preset.label)}
+                          data-testid={`btn-launch-${preset.label.replace(/\s+/g, "-").toLowerCase()}`}
+                          title={settings.cs2Path ? "In CS2 starten" : "CS2-Pfad in Einstellungen konfigurieren"}
+                        >
+                          {isLaunching
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : !settings.cs2Path
+                            ? <Settings className="w-4 h-4" />
+                            : <Play className="w-4 h-4" />
+                          }
+                        </Button>
+                      )}
                     </div>
                   </div>
                 );
               })}
               {!isTauri() && (
                 <p className="text-[11px] text-muted-foreground italic pt-2">
-                  Team-specific presets need parsed voice slots, available in the desktop app.
+                  Team-spezifische Presets benötigen geparste Voice-Slots — nur in der Desktop-App verfügbar.
                 </p>
+              )}
+              {isTauri() && !settings.cs2Path && (
+                <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground">
+                  <Settings className="w-3 h-3 shrink-0" />
+                  <span>
+                    CS2-Pfad fehlt —{" "}
+                    <Link href="/settings" className="text-primary underline underline-offset-2 hover:text-primary/80">
+                      Einstellungen öffnen
+                    </Link>
+                  </span>
+                </div>
               )}
             </CardContent>
           </Card>
