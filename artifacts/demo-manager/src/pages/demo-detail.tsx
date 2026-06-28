@@ -13,8 +13,6 @@ import {
   CheckCircle2,
   Users,
   Loader2,
-  Play,
-  Settings,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -26,7 +24,6 @@ import { formatFileSize } from "@/services/demoService";
 import {
   isTauri,
   tauriParseDemoPlayers,
-  tauriLaunchCS2,
   type TauriDemoPlayer,
 } from "@/services/tauriBridge";
 import {
@@ -39,6 +36,7 @@ import {
   getPlayersToHear,
   buildFullPlayCommand,
 } from "@/services/voiceService";
+import { useTranslation } from "@/services/i18n";
 
 async function loadPlayers(filepath: string): Promise<TauriDemoPlayer[]> {
   if (!isTauri()) return [];
@@ -72,14 +70,13 @@ export default function DemoDetail() {
   const params = useParams();
   const id = params.id ?? "";
   const { toast } = useToast();
+  const t = useTranslation();
 
   const [copiedPreset, setCopiedPreset] = useState<string | null>(null);
-  const [launchingPreset, setLaunchingPreset] = useState<string | null>(null);
 
   const demo = useMemo(() => loadDemos().find((d) => d.id === id) ?? null, [id]);
   const settings = useMemo(() => loadSettings(), []);
 
-  // CS2's playdemo expects "replays/<name>" without the .dem extension
   const playdemoArg = useMemo(
     () => demo ? `replays/${demo.filename.replace(/\.dem$/i, "")}` : "",
     [demo],
@@ -106,47 +103,10 @@ export default function DemoDetail() {
     navigator.clipboard.writeText(command);
     setCopiedPreset(label);
     toast({
-      title: "In Zwischenablage kopiert",
-      description: `Preset "${label}" — einfügen in die CS2-Konsole.`,
+      title: t.copiedTitle,
+      description: t.copiedDesc(label),
     });
     setTimeout(() => setCopiedPreset(null), 2000);
-  };
-
-  const handleLaunchCS2 = async (command: string, label: string) => {
-    if (!settings.cs2Path) {
-      toast({
-        title: "CS2-Pfad nicht konfiguriert",
-        description: "Gehe zu den Einstellungen und hinterlege den CS2-Pfad.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setLaunchingPreset(label);
-    try {
-      // Copy full command to clipboard as safety fallback
-      await navigator.clipboard.writeText(command);
-      const result = await tauriLaunchCS2(settings.cs2Path, playdemoArg);
-      if (result.status === "launched") {
-        toast({
-          title: "CS2 wird gestartet",
-          description: `Demo läuft mit Preset "${label}". Befehl auch in der Zwischenablage.`,
-        });
-      } else {
-        toast({
-          title: "CS2 konnte nicht gestartet werden",
-          description: "Befehl wurde in die Zwischenablage kopiert — bitte manuell in die Konsole einfügen.",
-          variant: "destructive",
-        });
-      }
-    } catch {
-      toast({
-        title: "Fehler beim Starten",
-        description: "Befehl in die Zwischenablage kopiert als Fallback.",
-        variant: "destructive",
-      });
-    } finally {
-      setTimeout(() => setLaunchingPreset(null), 2000);
-    }
   };
 
   if (!demo) {
@@ -155,7 +115,7 @@ export default function DemoDetail() {
         <h2 className="text-2xl font-bold text-foreground">Demo not found</h2>
         <p className="text-muted-foreground mt-2">The requested demo does not exist or was deleted.</p>
         <Link href="/">
-          <Button className="mt-6">Return to Library</Button>
+          <Button className="mt-6">{t.backToLibrary}</Button>
         </Link>
       </div>
     );
@@ -171,7 +131,7 @@ export default function DemoDetail() {
       <Link href="/">
         <Button variant="ghost" className="text-muted-foreground hover:text-foreground pl-0 group">
           <ChevronLeft className="w-4 h-4 mr-1 transition-transform group-hover:-translate-x-1" />
-          Back to Library
+          {t.backToLibrary}
         </Button>
       </Link>
 
@@ -182,7 +142,7 @@ export default function DemoDetail() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
           <div>
             <div className="flex items-center space-x-3 mb-2">
-              <Badge variant="default" className="bg-primary/20 text-primary border-primary/30 uppercase text-[10px] tracking-wider">Ready</Badge>
+              <Badge variant="default" className="bg-primary/20 text-primary border-primary/30 uppercase text-[10px] tracking-wider">{t.ready}</Badge>
               <span className="text-sm font-mono text-muted-foreground break-all">{demo.filename}</span>
             </div>
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground uppercase">
@@ -222,23 +182,23 @@ export default function DemoDetail() {
             <CardHeader className="border-b border-border pb-4 bg-secondary/20">
               <CardTitle className="uppercase tracking-wider text-sm flex items-center">
                 <Users className="w-4 h-4 mr-2 text-primary" />
-                Match Roster
+                {t.matchRoster}
               </CardTitle>
               <CardDescription className="text-xs">
-                Parsed from the demo file. Team T / CT come from the in-demo team number.
+                {t.matchRosterDesc}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               {loadingPlayers ? (
                 <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
                   <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                  <span className="text-sm">Parsing demo players…</span>
+                  <span className="text-sm">{t.loadingPlayers}</span>
                 </div>
               ) : !isTauri() ? (
                 <div className="text-center py-16 text-muted-foreground">
                   <Activity className="w-8 h-8 mx-auto mb-3 opacity-20" />
-                  <p className="text-sm">Player parsing runs in the desktop app.</p>
-                  <p className="text-xs mt-1">Open this demo in FACEIT easyDemo to read the roster.</p>
+                  <p className="text-sm">{t.playerParsingDesktopOnly}</p>
+                  <p className="text-xs mt-1">{t.openDemoInApp}</p>
                 </div>
               ) : (
                 <>
@@ -246,14 +206,14 @@ export default function DemoDetail() {
                     {/* Terrorists */}
                     <div className="p-4">
                       <h3 className="font-bold text-lg mb-4 text-foreground border-b border-border pb-2 uppercase tracking-wide">
-                        {demo.team1Name || "Terrorists"}
+                        {demo.team1Name || t.terrorists}
                       </h3>
                       <div className="space-y-1">
                         {terrorists.map((p) => (
                           <PlayerRow key={`${p.xuid}-${p.entityId}`} p={p} />
                         ))}
                         {terrorists.length === 0 && (
-                          <div className="text-muted-foreground text-sm py-4 italic">No players detected</div>
+                          <div className="text-muted-foreground text-sm py-4 italic">{t.noPlayersDetected}</div>
                         )}
                       </div>
                     </div>
@@ -261,14 +221,14 @@ export default function DemoDetail() {
                     {/* Counter-Terrorists */}
                     <div className="p-4">
                       <h3 className="font-bold text-lg mb-4 text-foreground border-b border-border pb-2 uppercase tracking-wide">
-                        {demo.team2Name || "Counter-Terrorists"}
+                        {demo.team2Name || t.counterTerrorists}
                       </h3>
                       <div className="space-y-1">
                         {counterTerrorists.map((p) => (
                           <PlayerRow key={`${p.xuid}-${p.entityId}`} p={p} />
                         ))}
                         {counterTerrorists.length === 0 && (
-                          <div className="text-muted-foreground text-sm py-4 italic">No players detected</div>
+                          <div className="text-muted-foreground text-sm py-4 italic">{t.noPlayersDetected}</div>
                         )}
                       </div>
                     </div>
@@ -276,7 +236,7 @@ export default function DemoDetail() {
 
                   {others.length > 0 && (
                     <div className="p-4 border-t border-border bg-secondary/10">
-                      <h3 className="font-bold text-sm mb-3 text-muted-foreground uppercase tracking-wide">Spectators / Unassigned</h3>
+                      <h3 className="font-bold text-sm mb-3 text-muted-foreground uppercase tracking-wide">{t.spectatorsUnassigned}</h3>
                       <div className="flex flex-wrap gap-2">
                         {others.map((p) => (
                           <Badge key={`${p.xuid}-${p.entityId}`} variant="outline" className="font-mono text-xs">{p.name}</Badge>
@@ -296,17 +256,16 @@ export default function DemoDetail() {
             <CardHeader className="border-b border-border pb-4 bg-primary/10">
               <CardTitle className="uppercase tracking-wider text-sm flex items-center text-primary font-bold">
                 <Mic className="w-4 h-4 mr-2" />
-                Voice Presets
+                {t.voicePresets}
               </CardTitle>
               <CardDescription className="text-xs">
-                Vollständiger Befehl inkl. <code className="font-mono">playdemo</code> — kopieren oder direkt in CS2 starten.
+                {t.voicePresetsDesc}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 space-y-4">
               {presets.map((preset) => {
                 const available = preset.command !== null;
                 const isCopied = copiedPreset === preset.label;
-                const isLaunching = launchingPreset === preset.label;
                 return (
                   <div key={preset.label} className="group">
                     <div className="flex justify-between items-end mb-1.5">
@@ -314,8 +273,8 @@ export default function DemoDetail() {
                       <span className="text-[10px] text-muted-foreground uppercase tracking-wider text-right max-w-[55%]">{preset.description}</span>
                     </div>
                     <div className="relative">
-                      <div className={`bg-background border border-border rounded p-3 font-mono text-xs text-muted-foreground break-all overflow-hidden max-h-24 hover:text-foreground transition-colors cursor-text selection:bg-primary/30 ${isTauri() ? "pr-20" : "pr-12"}`}>
-                        {available ? preset.command : "Nicht verfügbar — keine Voice-Slots für dieses Team gefunden."}
+                      <div className="bg-background border border-border rounded p-3 pr-12 font-mono text-xs text-muted-foreground break-all overflow-hidden max-h-24 hover:text-foreground transition-colors cursor-text selection:bg-primary/30">
+                        {available ? preset.command : t.presetNotAvailable}
                       </div>
 
                       {/* Copy button */}
@@ -323,62 +282,25 @@ export default function DemoDetail() {
                         size="icon"
                         variant="secondary"
                         disabled={!available}
-                        className={`absolute top-1/2 -translate-y-1/2 w-8 h-8 border border-border shadow-sm transition-all duration-200 ${isTauri() ? "right-10" : "right-1.5"} ${
+                        className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 border border-border shadow-sm transition-all duration-200 ${
                           isCopied
                             ? "bg-green-500/20 text-green-500 border-green-500/50 hover:bg-green-500/30 hover:text-green-400"
                             : "hover:bg-primary hover:text-primary-foreground hover:border-primary"
                         }`}
                         onClick={() => available && handleCopy(preset.command as string, preset.label)}
                         data-testid={`btn-copy-${preset.label.replace(/\s+/g, "-").toLowerCase()}`}
-                        title="In Zwischenablage kopieren"
+                        title={t.copyToClipboard}
                       >
                         {isCopied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                       </Button>
-
-                      {/* Launch in CS2 button — desktop only */}
-                      {isTauri() && (
-                        <Button
-                          size="icon"
-                          variant="secondary"
-                          disabled={!available || isLaunching}
-                          className={`absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 border border-border shadow-sm transition-all duration-200 ${
-                            isLaunching
-                              ? "bg-primary/20 text-primary border-primary/50"
-                              : !settings.cs2Path
-                              ? "opacity-40 cursor-not-allowed"
-                              : "hover:bg-primary hover:text-primary-foreground hover:border-primary"
-                          }`}
-                          onClick={() => available && handleLaunchCS2(preset.command as string, preset.label)}
-                          data-testid={`btn-launch-${preset.label.replace(/\s+/g, "-").toLowerCase()}`}
-                          title={settings.cs2Path ? "In CS2 starten" : "CS2-Pfad in Einstellungen konfigurieren"}
-                        >
-                          {isLaunching
-                            ? <Loader2 className="w-4 h-4 animate-spin" />
-                            : !settings.cs2Path
-                            ? <Settings className="w-4 h-4" />
-                            : <Play className="w-4 h-4" />
-                          }
-                        </Button>
-                      )}
                     </div>
                   </div>
                 );
               })}
               {!isTauri() && (
                 <p className="text-[11px] text-muted-foreground italic pt-2">
-                  Team-spezifische Presets benötigen geparste Voice-Slots — nur in der Desktop-App verfügbar.
+                  {t.teamPresetsNote}
                 </p>
-              )}
-              {isTauri() && !settings.cs2Path && (
-                <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground">
-                  <Settings className="w-3 h-3 shrink-0" />
-                  <span>
-                    CS2-Pfad fehlt —{" "}
-                    <Link href="/settings" className="text-primary underline underline-offset-2 hover:text-primary/80">
-                      Einstellungen öffnen
-                    </Link>
-                  </span>
-                </div>
               )}
             </CardContent>
           </Card>

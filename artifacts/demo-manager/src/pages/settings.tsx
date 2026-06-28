@@ -10,6 +10,7 @@ import {
   HardDrive,
   Crosshair,
   User,
+  Globe,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -21,11 +22,19 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { loadSettings, saveSettings } from "@/services/storage";
 import { isTauri, tauriDetectDownloadsFolder } from "@/services/tauriBridge";
 import { detectCS2Path, getCS2Status } from "@/services/cs2Service";
+import { useTranslation, LANGUAGES } from "@/services/i18n";
 
 async function pickFolder(): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
@@ -44,6 +53,7 @@ async function pickExe(): Promise<string | null> {
 
 export default function SettingsPage() {
   const { toast } = useToast();
+  const t = useTranslation();
   const initial = loadSettings();
   const tauri = isTauri();
 
@@ -54,6 +64,7 @@ export default function SettingsPage() {
   const [autoExtractGz, setAutoExtractGz] = useState(initial.autoExtractGz);
   const [autoAddToLibrary, setAutoAddToLibrary] = useState(initial.autoAddToLibrary);
   const [steamId, setSteamId] = useState(initial.steamId);
+  const [language, setLanguage] = useState(initial.language ?? "en");
 
   const [isDirty, setIsDirty] = useState(false);
   const [detecting, setDetecting] = useState(false);
@@ -76,14 +87,14 @@ export default function SettingsPage() {
         setIsDirty(true);
       }
       toast({
-        title: res ? "Auto-detect complete" : "CS2 not found",
-        description: res ? res.cs2Path : "Enter your paths manually.",
+        title: res ? t.autoDetectComplete : t.cs2NotFound,
+        description: res ? res.cs2Path : t.enterPathsManually,
         variant: res ? undefined : "destructive",
       });
     } catch (err) {
       toast({
-        title: "Auto-detect failed",
-        description: err instanceof Error ? err.message : "Something went wrong.",
+        title: t.autoDetectFailed,
+        description: err instanceof Error ? err.message : t.somethingWentWrong,
         variant: "destructive",
       });
     } finally {
@@ -100,8 +111,8 @@ export default function SettingsPage() {
       }
     } catch (err) {
       toast({
-        title: "Could not open folder dialog",
-        description: err instanceof Error ? err.message : "Something went wrong.",
+        title: t.couldNotOpenDialog,
+        description: err instanceof Error ? err.message : t.somethingWentWrong,
         variant: "destructive",
       });
     }
@@ -116,8 +127,9 @@ export default function SettingsPage() {
       autoExtractGz,
       autoAddToLibrary,
       steamId,
+      language,
     });
-    toast({ title: "Settings saved" });
+    toast({ title: t.settingsSaved });
     setIsDirty(false);
   }
 
@@ -126,10 +138,10 @@ export default function SettingsPage() {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground uppercase">
-            Settings
+            {t.settingsTitle}
           </h1>
           <p className="text-muted-foreground mt-1">
-            Configure CS2 paths and import automation for Demo Manager.
+            {t.settingsDesc}
           </p>
         </div>
         {tauri && (
@@ -145,7 +157,7 @@ export default function SettingsPage() {
             ) : (
               <Zap className="w-3.5 h-3.5" />
             )}
-            Auto-detect all
+            {t.autoDetectAll}
           </Button>
         )}
       </div>
@@ -154,34 +166,67 @@ export default function SettingsPage() {
         <div className="flex items-start gap-3 p-3 rounded-md bg-primary/10 border border-primary/20">
           <AlertCircle className="w-4 h-4 text-primary mt-0.5 shrink-0" />
           <p className="text-xs text-primary/90">
-            You're viewing the browser preview. Auto-detection and folder browsing require the
-            desktop app — here you can type paths manually to preview the layout.
+            {t.browserPreviewNote}
           </p>
         </div>
       )}
+
+      {/* ── Language ── */}
+      <Card className="border-border bg-card">
+        <CardHeader>
+          <CardTitle className="uppercase tracking-wider text-sm text-primary flex items-center gap-2">
+            <Globe className="w-4 h-4" />
+            {t.languageTitle}
+          </CardTitle>
+          <CardDescription>
+            {t.languageDesc}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Select
+            value={language}
+            onValueChange={(val) => {
+              setLanguage(val);
+              setIsDirty(true);
+            }}
+          >
+            <SelectTrigger className="w-64 bg-secondary/30">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LANGUAGES.map((lang) => (
+                <SelectItem key={lang.code} value={lang.code}>
+                  <span className="font-medium">{lang.nativeLabel}</span>
+                  <span className="text-muted-foreground ml-2 text-xs">— {lang.label}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
 
       {/* ── CS2 installation ── */}
       <Card className="border-border bg-card">
         <CardHeader>
           <CardTitle className="uppercase tracking-wider text-sm text-primary flex items-center gap-2">
             <Crosshair className="w-4 h-4" />
-            CS2 Installation
+            {t.cs2InstallationTitle}
           </CardTitle>
           <CardDescription>
-            Path to your cs2.exe. Used to launch demos directly into Counter-Strike 2.
+            {t.cs2InstallationDesc}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-xs uppercase tracking-wider text-muted-foreground">
-              cs2.exe path
+              {t.cs2ExePath}
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <SettingsIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   className="pl-9 font-mono text-sm bg-secondary/30"
-                  placeholder="C:\Program Files (x86)\Steam\...\game\bin\win64\cs2.exe"
+                  placeholder={t.cs2ExePlaceholder}
                   value={cs2Path}
                   onChange={(e) => {
                     setCs2Path(e.target.value);
@@ -191,7 +236,7 @@ export default function SettingsPage() {
               </div>
               {tauri && (
                 <Button variant="outline" onClick={() => browseInto(setCs2Path, true)} className="shrink-0">
-                  Browse
+                  {t.browse}
                 </Button>
               )}
             </div>
@@ -200,12 +245,12 @@ export default function SettingsPage() {
                 {cs2Status === "found" ? (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
-                    <span className="text-primary">Looks valid</span>
+                    <span className="text-primary">{t.looksValid}</span>
                   </>
                 ) : (
                   <>
                     <AlertCircle className="w-3.5 h-3.5 text-destructive" />
-                    <span className="text-destructive">Should point to cs2.exe</span>
+                    <span className="text-destructive">{t.shouldPointToCs2}</span>
                   </>
                 )}
               </p>
@@ -214,12 +259,12 @@ export default function SettingsPage() {
 
           <div className="space-y-1.5">
             <label className="text-xs uppercase tracking-wider text-muted-foreground">
-              Steam root
+              {t.steamRoot}
             </label>
             <div className="flex gap-2">
               <Input
                 className="font-mono text-sm bg-secondary/30"
-                placeholder="C:\Program Files (x86)\Steam"
+                placeholder={t.steamRootPlaceholder}
                 value={steamPath}
                 onChange={(e) => {
                   setSteamPath(e.target.value);
@@ -228,7 +273,7 @@ export default function SettingsPage() {
               />
               {tauri && (
                 <Button variant="outline" onClick={() => browseInto(setSteamPath)} className="shrink-0">
-                  Browse
+                  {t.browse}
                 </Button>
               )}
             </div>
@@ -241,23 +286,23 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="uppercase tracking-wider text-sm text-primary flex items-center gap-2">
             <FolderOpen className="w-4 h-4" />
-            Folders
+            {t.foldersTitle}
           </CardTitle>
           <CardDescription>
-            Where demos live and where new downloads are scanned from.
+            {t.foldersDesc}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-xs uppercase tracking-wider text-muted-foreground">
-              Demo directory (CS2 replays folder)
+              {t.demoDirectory}
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <HardDrive className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   className="pl-9 font-mono text-sm bg-secondary/30"
-                  placeholder="C:\...\game\csgo\replays"
+                  placeholder={t.demoDirectoryPlaceholder}
                   value={demoDirectory}
                   onChange={(e) => {
                     setDemoDirectory(e.target.value);
@@ -267,7 +312,7 @@ export default function SettingsPage() {
               </div>
               {tauri && (
                 <Button variant="outline" onClick={() => browseInto(setDemoDirectory)} className="shrink-0">
-                  Browse
+                  {t.browse}
                 </Button>
               )}
             </div>
@@ -275,14 +320,14 @@ export default function SettingsPage() {
 
           <div className="space-y-1.5">
             <label className="text-xs uppercase tracking-wider text-muted-foreground">
-              Downloads folder
+              {t.downloadsFolderLabel}
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <FolderOpen className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   className="pl-9 font-mono text-sm bg-secondary/30"
-                  placeholder="C:\Users\<name>\Downloads"
+                  placeholder={t.downloadsFolderPlaceholder}
                   value={downloadsFolder}
                   onChange={(e) => {
                     setDownloadsFolder(e.target.value);
@@ -292,7 +337,7 @@ export default function SettingsPage() {
               </div>
               {tauri && (
                 <Button variant="outline" onClick={() => browseInto(setDownloadsFolder)} className="shrink-0">
-                  Browse
+                  {t.browse}
                 </Button>
               )}
             </div>
@@ -306,10 +351,10 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium uppercase tracking-wider text-foreground">
-                Auto-extract .gz / .zst
+                {t.autoExtractTitle}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Automatically decompress compressed demos when importing.
+                {t.autoExtractDesc}
               </p>
             </div>
             <Switch
@@ -325,10 +370,10 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between border-t border-border pt-6">
             <div>
               <p className="text-sm font-medium uppercase tracking-wider text-foreground">
-                Auto-add to library
+                {t.autoAddTitle}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Add scanned/imported demos to your library automatically.
+                {t.autoAddDesc}
               </p>
             </div>
             <Switch
@@ -348,20 +393,20 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="uppercase tracking-wider text-sm text-primary flex items-center gap-2">
             <User className="w-4 h-4" />
-            Advanced
+            {t.advancedTitle}
           </CardTitle>
           <CardDescription>
-            Optional. Your Steam ID64 helps the demo parser identify your own team.
+            {t.advancedDesc}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-1.5">
             <label className="text-xs uppercase tracking-wider text-muted-foreground">
-              Steam ID64
+              {t.steamId64}
             </label>
             <Input
               className="font-mono text-sm bg-secondary/30"
-              placeholder="76561198012345678"
+              placeholder={t.steamId64Placeholder}
               value={steamId}
               onChange={(e) => {
                 setSteamId(e.target.value);
@@ -380,7 +425,7 @@ export default function SettingsPage() {
           disabled={!isDirty}
         >
           <Save className="w-4 h-4" />
-          Save Settings
+          {t.saveSettings}
         </Button>
       </div>
     </div>

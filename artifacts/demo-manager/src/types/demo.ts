@@ -31,6 +31,8 @@ export interface AppSettings {
    * Used by the demo parser to identify the user's own team.
    */
   steamId: string;
+  /** UI language code, e.g. "en", "de". Defaults to "en". */
+  language: string;
 }
 
 export type CS2Status = "found" | "not_found" | "unknown";

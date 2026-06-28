@@ -17,6 +17,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   downloadsFolder: "",
   // Steam ID64 of the local player — filled automatically when connecting via FACEIT.
   steamId: "",
+  // UI language — English by default.
+  language: "en",
 };
 
 export function loadDemos(): Demo[] {
