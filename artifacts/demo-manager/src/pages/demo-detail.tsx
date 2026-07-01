@@ -91,10 +91,11 @@ export default function DemoDetail() {
   const rosters = players ? buildRosters(players) : null;
   const presets = VOICE_OPTIONS.map((opt) => {
     const toHear = getPlayersToHear(opt.mode, rosters);
+    const vo = t.voiceOptions[opt.mode as keyof typeof t.voiceOptions];
     return {
       mode: opt.mode,
-      label: opt.label,
-      description: opt.description,
+      label: vo.label,
+      description: vo.description,
       command: buildFullPlayCommand(playdemoArg, opt.mode, toHear),
     };
   });

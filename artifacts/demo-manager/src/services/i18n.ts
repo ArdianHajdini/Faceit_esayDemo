@@ -36,6 +36,13 @@ const translations = {
     noPlayersDetected: "No players detected",
     teamPresetsNote: "Team-specific presets require parsed voice slots — desktop app only.",
 
+    voiceOptions: {
+      all:     { label: "Hear All",   description: "All player voices enabled" },
+      none:    { label: "No Voice",   description: "All voices muted" },
+      team_t:  { label: "Team T",     description: "Hear Terrorists only — CTs muted" },
+      team_ct: { label: "Team CT",    description: "Hear Counter-Terrorists only — Ts muted" },
+    },
+
     settingsTitle: "Settings",
     settingsDesc: "Configure CS2 paths and import automation for Demo Manager.",
     autoDetectAll: "Auto-detect all",
@@ -73,6 +80,22 @@ const translations = {
     autoDetectFailed: "Auto-detect failed",
     somethingWentWrong: "Something went wrong.",
     couldNotOpenDialog: "Could not open folder dialog",
+
+    licenseTitle: "License",
+    licenseDesc: "View and revoke your active license key.",
+    licenseStatusLabel: "Status",
+    licenseActive: "Active",
+    licenseOfflineGrace: "Offline (grace period)",
+    licenseOfflineExpired: "Offline (expired)",
+    licenseUnlicensed: "No license",
+    licenseKeyLabel: "License key",
+    licenseProviderLabel: "Provider",
+    licenseValidatedAt: "Last validated",
+    licenseRevoke: "Revoke License",
+    licenseRevokeDesc: "Removes the license locally. You can re-enter it at any time.",
+    licenseRevoked: "License revoked",
+    licenseRevokedDesc: "The license has been removed. Re-enter your key to reactivate.",
+    licenseNone: "No active license stored.",
   },
   de: {
     backToLibrary: "Zurück zur Bibliothek",
@@ -93,6 +116,13 @@ const translations = {
     spectatorsUnassigned: "Zuschauer / Nicht zugewiesen",
     noPlayersDetected: "Keine Spieler erkannt",
     teamPresetsNote: "Team-spezifische Presets benötigen geparste Voice-Slots — nur in der Desktop-App.",
+
+    voiceOptions: {
+      all:     { label: "Alle hören",  description: "Alle Spielerstimmen aktiviert" },
+      none:    { label: "Kein Voice",  description: "Alle Stimmen deaktiviert" },
+      team_t:  { label: "Team T",      description: "Nur Terroristen hören — CTs werden stummgeschaltet" },
+      team_ct: { label: "Team CT",     description: "Nur Counter-Terroristen hören — Ts werden stummgeschaltet" },
+    },
 
     settingsTitle: "Einstellungen",
     settingsDesc: "CS2-Pfade und Import-Automatisierung konfigurieren.",
@@ -131,6 +161,22 @@ const translations = {
     autoDetectFailed: "Auto-Erkennung fehlgeschlagen",
     somethingWentWrong: "Etwas ist schiefgelaufen.",
     couldNotOpenDialog: "Ordner-Dialog konnte nicht geöffnet werden",
+
+    licenseTitle: "Lizenz",
+    licenseDesc: "Aktiven Lizenzschlüssel anzeigen und entziehen.",
+    licenseStatusLabel: "Status",
+    licenseActive: "Aktiv",
+    licenseOfflineGrace: "Offline (Karenzzeit)",
+    licenseOfflineExpired: "Offline (abgelaufen)",
+    licenseUnlicensed: "Keine Lizenz",
+    licenseKeyLabel: "Lizenzschlüssel",
+    licenseProviderLabel: "Anbieter",
+    licenseValidatedAt: "Zuletzt validiert",
+    licenseRevoke: "Lizenz entziehen",
+    licenseRevokeDesc: "Entfernt die Lizenz lokal. Du kannst sie jederzeit neu eingeben.",
+    licenseRevoked: "Lizenz entzogen",
+    licenseRevokedDesc: "Die Lizenz wurde entfernt. Schlüssel neu eingeben um zu reaktivieren.",
+    licenseNone: "Keine aktive Lizenz gespeichert.",
   },
 } as const;
 

@@ -11,6 +11,8 @@ import {
   Crosshair,
   User,
   Globe,
+  KeyRound,
+  Trash2,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -35,6 +37,11 @@ import { loadSettings, saveSettings } from "@/services/storage";
 import { isTauri, tauriDetectDownloadsFolder } from "@/services/tauriBridge";
 import { detectCS2Path, getCS2Status } from "@/services/cs2Service";
 import { useTranslation, LANGUAGES } from "@/services/i18n";
+import {
+  getStoredLicense,
+  deactivateLicense,
+  type LicenseStatus,
+} from "@/services/licenseService";
 
 async function pickFolder(): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
@@ -68,6 +75,8 @@ export default function SettingsPage() {
 
   const [isDirty, setIsDirty] = useState(false);
   const [detecting, setDetecting] = useState(false);
+  const [licenseInfo, setLicenseInfo] = useState(() => getStoredLicense());
+  const [revoking, setRevoking] = useState(false);
 
   const cs2Status = getCS2Status(cs2Path);
 
@@ -131,6 +140,30 @@ export default function SettingsPage() {
     });
     toast({ title: t.settingsSaved });
     setIsDirty(false);
+  }
+
+  async function handleRevoke() {
+    setRevoking(true);
+    try {
+      await deactivateLicense();
+      setLicenseInfo(null);
+      toast({ title: t.licenseRevoked, description: t.licenseRevokedDesc });
+    } finally {
+      setRevoking(false);
+    }
+  }
+
+  function maskKey(key: string): string {
+    if (key.length <= 8) return "••••••••";
+    return key.slice(0, 4) + "••••••••" + key.slice(-4);
+  }
+
+  function licenseStatusText(info: ReturnType<typeof getStoredLicense>): { label: string; color: string } {
+    if (!info) return { label: t.licenseUnlicensed, color: "text-muted-foreground" };
+    const days = (Date.now() - new Date(info.validatedAt).getTime()) / 86_400_000;
+    if (days <= 7) return { label: t.licenseActive, color: "text-primary" };
+    if (days <= 14) return { label: t.licenseOfflineGrace, color: "text-yellow-500" };
+    return { label: t.licenseOfflineExpired, color: "text-destructive" };
   }
 
   return (
@@ -414,6 +447,61 @@ export default function SettingsPage() {
               }}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ── License ── */}
+      <Card className="border-border bg-card">
+        <CardHeader>
+          <CardTitle className="uppercase tracking-wider text-sm text-primary flex items-center gap-2">
+            <KeyRound className="w-4 h-4" />
+            {t.licenseTitle}
+          </CardTitle>
+          <CardDescription>
+            {t.licenseDesc}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {licenseInfo ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                <span className="text-muted-foreground uppercase tracking-wider text-xs">{t.licenseStatusLabel}</span>
+                <span className={`font-semibold ${licenseStatusText(licenseInfo).color}`}>
+                  {licenseStatusText(licenseInfo).label}
+                </span>
+
+                <span className="text-muted-foreground uppercase tracking-wider text-xs">{t.licenseKeyLabel}</span>
+                <span className="font-mono text-xs text-foreground">{maskKey(licenseInfo.key)}</span>
+
+                <span className="text-muted-foreground uppercase tracking-wider text-xs">{t.licenseProviderLabel}</span>
+                <span className="text-foreground capitalize">{licenseInfo.provider}</span>
+
+                <span className="text-muted-foreground uppercase tracking-wider text-xs">{t.licenseValidatedAt}</span>
+                <span className="text-foreground text-xs">
+                  {new Date(licenseInfo.validatedAt).toLocaleString()}
+                </span>
+              </div>
+
+              <div className="border-t border-border pt-4">
+                <p className="text-xs text-muted-foreground mb-3">{t.licenseRevokeDesc}</p>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="gap-2"
+                  onClick={handleRevoke}
+                  disabled={revoking}
+                >
+                  {revoking
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Trash2 className="w-3.5 h-3.5" />
+                  }
+                  {t.licenseRevoke}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground italic">{t.licenseNone}</p>
+          )}
         </CardContent>
       </Card>
 
