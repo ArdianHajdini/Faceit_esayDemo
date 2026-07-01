@@ -226,9 +226,9 @@ export default function Library() {
                 return (
                   <div key={demo.id} className="p-4 flex items-center justify-between hover:bg-secondary/50 transition-colors group">
                     <div className="flex items-center space-x-4">
-                      <div className="w-14 h-14 bg-secondary rounded-md flex flex-col items-center justify-center border border-border shrink-0">
-                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">MAP</span>
-                        <span className="text-sm font-bold truncate max-w-full px-1">
+                      <div className="w-24 h-14 bg-secondary rounded-md flex flex-col items-center justify-center border border-border shrink-0 px-1">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">MAP</span>
+                        <span className="text-xs font-bold text-center leading-tight w-full text-center">
                           {(() => {
                             const m = demo.map ?? mapEnrichment[demo.filepath];
                             if (!m) return "…";

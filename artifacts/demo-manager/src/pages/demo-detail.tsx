@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { loadDemos, loadSettings } from "@/services/storage";
+import { loadDemos, loadSettings, loadMapCache } from "@/services/storage";
 import { formatFileSize } from "@/services/demoService";
 import {
   isTauri,
@@ -162,7 +162,7 @@ export default function DemoDetail() {
           <div className="flex items-center space-x-6 text-sm text-muted-foreground font-medium uppercase tracking-wider">
             <div className="flex items-center">
               <MapIcon className="w-4 h-4 mr-2 text-primary" />
-              {demo.map || "—"}
+              {demo.map ?? loadMapCache()[demo.filepath] ?? "—"}
             </div>
             <div className="flex items-center">
               <Calendar className="w-4 h-4 mr-2 text-primary" />
