@@ -38,6 +38,11 @@ pub struct LicenseValidateResult {
     pub offline: bool,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DemoMapMeta {
+    pub map: Option<String>,
+}
+
 /// A player entry extracted from a CS2 demo file.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DemoPlayer {
@@ -657,6 +662,76 @@ pub mod commands {
             eprintln!("[CS2DM] is_cs2_running (linux): {}", ok);
             ok
         }
+    }
+
+    // ── Command — Map-Namen aus Demo lesen ───────────
+
+    /// Scan a byte slice for a CS map name (de_/cs_/aim_ prefix).
+    fn scan_for_map_bytes(bytes: &[u8]) -> Option<String> {
+        let prefixes: &[&[u8]] = &[b"de_", b"cs_", b"aim_"];
+        for i in 0..bytes.len().saturating_sub(4) {
+            for prefix in prefixes {
+                if bytes[i..].starts_with(prefix) {
+                    let start = i;
+                    let mut end = i + prefix.len();
+                    while end < bytes.len()
+                        && (bytes[end].is_ascii_lowercase()
+                            || bytes[end].is_ascii_digit()
+                            || bytes[end] == b'_')
+                    {
+                        end += 1;
+                    }
+                    let len = end - start;
+                    if len >= 4 && len <= 25 {
+                        if let Ok(s) = std::str::from_utf8(&bytes[start..end]) {
+                            return Some(s.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Fast map-name extraction — reads only the first 32 KB of the demo file.
+    ///
+    /// HL2DEMO: map name is at byte offset 536 (null-terminated, 260-byte field).
+    /// PBDEMS2: scan the first 32 KB for de_/cs_/aim_ prefixes.
+    #[tauri::command]
+    pub fn parse_demo_map(filepath: String) -> Result<super::DemoMapMeta, String> {
+        use std::io::Read;
+
+        let mut file = fs::File::open(&filepath)
+            .map_err(|e| format!("Datei nicht gefunden: {e}"))?;
+
+        let mut bytes = vec![0u8; 32768];
+        let n = file.read(&mut bytes).map_err(|e| e.to_string())?;
+        bytes.truncate(n);
+
+        if bytes.len() < 8 {
+            return Ok(super::DemoMapMeta { map: None });
+        }
+
+        if &bytes[..8] == b"HL2DEMO\0" {
+            if bytes.len() >= 796 {
+                let map_slice = &bytes[536..796];
+                let end = map_slice.iter().position(|&b| b == 0).unwrap_or(260);
+                let map = std::str::from_utf8(&map_slice[..end])
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                return Ok(super::DemoMapMeta {
+                    map: if map.is_empty() { None } else { Some(map) },
+                });
+            }
+            return Ok(super::DemoMapMeta { map: None });
+        }
+
+        if &bytes[..8] == b"PBDEMS2\0" {
+            return Ok(super::DemoMapMeta { map: scan_for_map_bytes(&bytes) });
+        }
+
+        Ok(super::DemoMapMeta { map: None })
     }
 
     // ── Command — Downloads-Ordner scannen ───────────
@@ -1712,6 +1787,7 @@ pub fn run() {
             commands::download_demo,
             commands::scan_downloads,
             commands::detect_downloads_folder,
+            commands::parse_demo_map,
             commands::parse_demo_players,
             commands::verify_license,
             commands::validate_license_stored,

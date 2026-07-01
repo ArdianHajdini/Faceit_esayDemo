@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -30,8 +30,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { loadSettings } from "@/services/storage";
+import { loadSettings, loadMapCache, saveMapCache } from "@/services/storage";
 import { loadDemosFromDisk, deleteDemoFull, formatFileSize } from "@/services/demoService";
+import { isTauri, tauriParseDemoMap, tauriDeleteDemoFile } from "@/services/tauriBridge";
 import type { Demo } from "@/types/demo";
 
 export default function Library() {
@@ -39,6 +40,7 @@ export default function Library() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const settings = loadSettings();
+  const [mapEnrichment, setMapEnrichment] = useState<Record<string, string>>(() => loadMapCache());
 
   const { data: demos, isLoading } = useQuery({
     queryKey: ["demos", settings.demoDirectory],
@@ -46,6 +48,33 @@ export default function Library() {
   });
 
   const allDemos: Demo[] = demos ?? [];
+
+  // Background map enrichment: parse map names for demos that don't have one yet.
+  useEffect(() => {
+    if (!isTauri() || !demos || demos.length === 0) return;
+    const toEnrich = demos.filter((d) => !d.map && !mapEnrichment[d.filepath]);
+    if (toEnrich.length === 0) return;
+    let active = true;
+    const cache = { ...mapEnrichment };
+    (async () => {
+      for (const demo of toEnrich) {
+        if (!active) break;
+        try {
+          const meta = await tauriParseDemoMap(demo.filepath);
+          if (meta.map && active) {
+            cache[demo.filepath] = meta.map;
+            setMapEnrichment((prev) => ({ ...prev, [demo.filepath]: meta.map! }));
+            saveMapCache(cache);
+          }
+        } catch {
+          // ignore parse errors for individual files
+        }
+      }
+    })();
+    return () => { active = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demos]);
+
   const totalDemos = allDemos.length;
   const totalSize = allDemos.reduce((sum, d) => sum + (d.size || 0), 0);
   const mapsTracked = new Set(
@@ -72,12 +101,22 @@ export default function Library() {
   });
 
   const handleDelete = async (id: string) => {
+    const demo = allDemos.find((d) => d.id === id);
     try {
       await deleteDemoFull(allDemos, id);
-      toast({ title: "Demo deleted successfully" });
+
+      // Also remove the compressed source from the downloads folder if present
+      if (isTauri() && demo && settings.downloadsFolder) {
+        const sep = settings.downloadsFolder.includes("/") ? "/" : "\\";
+        for (const ext of [".gz", ".zst"]) {
+          tauriDeleteDemoFile(`${settings.downloadsFolder}${sep}${demo.filename}${ext}`).catch(() => {});
+        }
+      }
+
+      toast({ title: "Demo gelöscht" });
       queryClient.invalidateQueries({ queryKey: ["demos"] });
     } catch {
-      toast({ title: "Failed to delete demo", variant: "destructive" });
+      toast({ title: "Löschen fehlgeschlagen", variant: "destructive" });
     }
   };
 
@@ -190,7 +229,11 @@ export default function Library() {
                       <div className="w-14 h-14 bg-secondary rounded-md flex flex-col items-center justify-center border border-border shrink-0">
                         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">MAP</span>
                         <span className="text-sm font-bold truncate max-w-full px-1">
-                          {demo.map ? demo.map.replace("de_", "") : "DEM"}
+                          {(() => {
+                            const m = demo.map ?? mapEnrichment[demo.filepath];
+                            if (!m) return "…";
+                            return m.replace(/^(de_|cs_|aim_)/, "");
+                          })()}
                         </span>
                       </div>
 

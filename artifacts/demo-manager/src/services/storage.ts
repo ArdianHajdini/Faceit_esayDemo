@@ -3,6 +3,7 @@ import type { Demo, AppSettings } from "../types/demo";
 
 const DEMOS_KEY = "cs2dm_demos";
 const SETTINGS_KEY = "cs2dm_settings";
+const MAP_CACHE_KEY = "cs2dm_map_cache";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   // Empty by default — the app auto-detects the CS2 replay folder on first launch.
@@ -47,4 +48,19 @@ export function loadSettings(): AppSettings {
 
 export function saveSettings(settings: AppSettings): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+/** filepath → map name cache, survives page reloads without re-parsing. */
+export function loadMapCache(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(MAP_CACHE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+export function saveMapCache(cache: Record<string, string>): void {
+  localStorage.setItem(MAP_CACHE_KEY, JSON.stringify(cache));
 }

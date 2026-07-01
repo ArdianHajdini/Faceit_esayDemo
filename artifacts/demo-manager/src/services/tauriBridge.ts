@@ -134,6 +134,12 @@ export async function tauriDetectDownloadsFolder(): Promise<string | null> {
   return invoke<string | null>("detect_downloads_folder");
 }
 
+/** Parse the map name from the first 32 KB of a demo file (fast, no full parse). */
+export async function tauriParseDemoMap(filepath: string): Promise<{ map: string | null }> {
+  const invoke = await getInvoke();
+  return invoke<{ map: string | null }>("parse_demo_map", { filepath });
+}
+
 /** Get file metadata for a specific demo path. */
 export async function tauriGetFileInfo(filepath: string): Promise<TauriDemoEntry> {
   const invoke = await getInvoke();
