@@ -96,6 +96,17 @@ const translations = {
     licenseRevoked: "License revoked",
     licenseRevokedDesc: "The license has been removed. Re-enter your key to reactivate.",
     licenseNone: "No active license stored.",
+
+    licenseGateHeading: "License Required",
+    licenseGateDesc: "Enter your license key to access FACEIT easyDemo.",
+    licenseGatePlaceholder: "XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX",
+    licenseGateActivate: "Activate",
+    licenseGateActivating: "Activating…",
+    licenseGateErrorInvalid: "Invalid or revoked license key. Please check and try again.",
+    licenseGateErrorNetwork: "Network error. Please check your connection and try again.",
+    licenseGateBuy: "Don't have a license? Buy here",
+    licenseGateChecking: "Checking license…",
+    licenseGateOfflineBanner: "Offline mode — license must be validated within 7 days.",
   },
   de: {
     backToLibrary: "Zurück zur Bibliothek",
@@ -177,6 +188,17 @@ const translations = {
     licenseRevoked: "Lizenz entzogen",
     licenseRevokedDesc: "Die Lizenz wurde entfernt. Schlüssel neu eingeben um zu reaktivieren.",
     licenseNone: "Keine aktive Lizenz gespeichert.",
+
+    licenseGateHeading: "Lizenz erforderlich",
+    licenseGateDesc: "Gib deinen Lizenzschlüssel ein, um FACEIT easyDemo zu nutzen.",
+    licenseGatePlaceholder: "XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX",
+    licenseGateActivate: "Aktivieren",
+    licenseGateActivating: "Aktiviere…",
+    licenseGateErrorInvalid: "Ungültiger oder entzogener Lizenzschlüssel. Bitte nochmal prüfen.",
+    licenseGateErrorNetwork: "Netzwerkfehler. Verbindung prüfen und erneut versuchen.",
+    licenseGateBuy: "Noch keine Lizenz? Hier kaufen",
+    licenseGateChecking: "Lizenz wird geprüft…",
+    licenseGateOfflineBanner: "Offline-Modus — Lizenz muss innerhalb von 7 Tagen validiert werden.",
   },
 } as const;
 
