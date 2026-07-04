@@ -53,7 +53,10 @@ export default function Library() {
   // Background meta enrichment: parse map + scores for demos that don't have them yet.
   useEffect(() => {
     if (!isTauri() || !demos || demos.length === 0) return;
-    const toEnrich = demos.filter((d) => !d.map || d.scoreT == null || !metaEnrichment[d.filepath]);
+    const effMap = (d: Demo) => d.map ?? metaEnrichment[d.filepath]?.map;
+    const effScoreT = (d: Demo) => d.scoreT ?? metaEnrichment[d.filepath]?.scoreT;
+    const effScoreCT = (d: Demo) => d.scoreCT ?? metaEnrichment[d.filepath]?.scoreCT;
+    const toEnrich = demos.filter((d) => !effMap(d) || effScoreT(d) == null || effScoreCT(d) == null);
     if (toEnrich.length === 0) return;
     let active = true;
     const cache = { ...metaEnrichment };
