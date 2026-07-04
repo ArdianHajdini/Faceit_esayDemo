@@ -4,6 +4,7 @@ import type { Demo, AppSettings } from "../types/demo";
 const DEMOS_KEY = "cs2dm_demos";
 const SETTINGS_KEY = "cs2dm_settings";
 const MAP_CACHE_KEY = "cs2dm_map_cache";
+const META_CACHE_KEY = "cs2dm_meta_cache";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   // Empty by default — the app auto-detects the CS2 replay folder on first launch.
@@ -63,4 +64,25 @@ export function loadMapCache(): Record<string, string> {
 
 export function saveMapCache(cache: Record<string, string>): void {
   localStorage.setItem(MAP_CACHE_KEY, JSON.stringify(cache));
+}
+
+/** filepath → { map, scoreT, scoreCT } meta cache, survives reloads without re-parsing. */
+export interface MetaCacheEntry {
+  map?: string;
+  scoreT?: number;
+  scoreCT?: number;
+}
+
+export function loadMetaCache(): Record<string, MetaCacheEntry> {
+  try {
+    const raw = localStorage.getItem(META_CACHE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Record<string, MetaCacheEntry>;
+  } catch {
+    return {};
+  }
+}
+
+export function saveMetaCache(cache: Record<string, MetaCacheEntry>): void {
+  localStorage.setItem(META_CACHE_KEY, JSON.stringify(cache));
 }

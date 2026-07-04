@@ -140,6 +140,16 @@ export async function tauriParseDemoMap(filepath: string): Promise<{ map: string
   return invoke<{ map: string | null }>("parse_demo_map", { filepath });
 }
 
+/**
+ * Parse map name + team scores from a demo file.
+ * HL2DEMO: map only (static header). PBDEMS2: map + scores via source2-demo observer.
+ * Returns { map, scoreT, scoreCT } where scores may be null.
+ */
+export async function tauriParseDemoMeta(filepath: string): Promise<{ map: string | null; scoreT: number | null; scoreCT: number | null }> {
+  const invoke = await getInvoke();
+  return invoke<{ map: string | null; scoreT: number | null; scoreCT: number | null }>("parse_demo_meta", { filepath });
+}
+
 /** Get file metadata for a specific demo path. */
 export async function tauriGetFileInfo(filepath: string): Promise<TauriDemoEntry> {
   const invoke = await getInvoke();

@@ -15,6 +15,8 @@ export interface Demo {
   map?: string;
   team1Name?: string;
   team2Name?: string;
+  scoreT?: number;
+  scoreCT?: number;
 }
 
 export interface AppSettings {

@@ -30,9 +30,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { loadSettings, loadMapCache, saveMapCache } from "@/services/storage";
+import { loadSettings, loadMetaCache, saveMetaCache } from "@/services/storage";
+import type { MetaCacheEntry } from "@/services/storage";
 import { loadDemosFromDisk, deleteDemoFull, formatFileSize } from "@/services/demoService";
-import { isTauri, tauriParseDemoMap, tauriDeleteDemoFile } from "@/services/tauriBridge";
+import { isTauri, tauriParseDemoMeta, tauriDeleteDemoFile } from "@/services/tauriBridge";
 import type { Demo } from "@/types/demo";
 
 export default function Library() {
@@ -40,7 +41,7 @@ export default function Library() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const settings = loadSettings();
-  const [mapEnrichment, setMapEnrichment] = useState<Record<string, string>>(() => loadMapCache());
+  const [metaEnrichment, setMetaEnrichment] = useState<Record<string, MetaCacheEntry>>(() => loadMetaCache());
 
   const { data: demos, isLoading } = useQuery({
     queryKey: ["demos", settings.demoDirectory],
@@ -49,22 +50,28 @@ export default function Library() {
 
   const allDemos: Demo[] = demos ?? [];
 
-  // Background map enrichment: parse map names for demos that don't have one yet.
+  // Background meta enrichment: parse map + scores for demos that don't have them yet.
   useEffect(() => {
     if (!isTauri() || !demos || demos.length === 0) return;
-    const toEnrich = demos.filter((d) => !d.map && !mapEnrichment[d.filepath]);
+    const toEnrich = demos.filter((d) => !d.map || d.scoreT == null || !metaEnrichment[d.filepath]);
     if (toEnrich.length === 0) return;
     let active = true;
-    const cache = { ...mapEnrichment };
+    const cache = { ...metaEnrichment };
     (async () => {
       for (const demo of toEnrich) {
         if (!active) break;
         try {
-          const meta = await tauriParseDemoMap(demo.filepath);
-          if (meta.map && active) {
-            cache[demo.filepath] = meta.map;
-            setMapEnrichment((prev) => ({ ...prev, [demo.filepath]: meta.map! }));
-            saveMapCache(cache);
+          const meta = await tauriParseDemoMeta(demo.filepath);
+          if (active) {
+            const entry: MetaCacheEntry = {};
+            if (meta.map) entry.map = meta.map;
+            if (meta.scoreT != null) entry.scoreT = meta.scoreT;
+            if (meta.scoreCT != null) entry.scoreCT = meta.scoreCT;
+            if (entry.map != null || entry.scoreT != null) {
+              cache[demo.filepath] = entry;
+              setMetaEnrichment((prev) => ({ ...prev, [demo.filepath]: entry }));
+              saveMetaCache(cache);
+            }
           }
         } catch {
           // ignore parse errors for individual files
@@ -91,10 +98,11 @@ export default function Library() {
 
   const filteredDemos = allDemos.filter((demo) => {
     const s = search.toLowerCase();
+    const map = demo.map ?? metaEnrichment[demo.filepath]?.map;
     return (
       demo.displayName.toLowerCase().includes(s) ||
       demo.filename.toLowerCase().includes(s) ||
-      (demo.map && demo.map.toLowerCase().includes(s)) ||
+      (map && map.toLowerCase().includes(s)) ||
       (demo.team1Name && demo.team1Name.toLowerCase().includes(s)) ||
       (demo.team2Name && demo.team2Name.toLowerCase().includes(s))
     );
@@ -226,15 +234,31 @@ export default function Library() {
                 return (
                   <div key={demo.id} className="p-4 flex items-center justify-between hover:bg-secondary/50 transition-colors group">
                     <div className="flex items-center space-x-4">
-                      <div className="w-24 h-14 bg-secondary rounded-md flex flex-col items-center justify-center border border-border shrink-0 px-1">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">MAP</span>
-                        <span className="text-xs font-bold text-center leading-tight w-full text-center">
-                          {(() => {
-                            const m = demo.map ?? mapEnrichment[demo.filepath];
-                            if (!m) return "…";
-                            return m.replace(/^(de_|cs_|aim_)/, "");
-                          })()}
-                        </span>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-24 h-14 bg-secondary rounded-md flex flex-col items-center justify-center border border-border shrink-0 px-1">
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">MAP</span>
+                          <span className="text-xs font-bold text-center leading-tight w-full text-center">
+                            {(() => {
+                              const m = demo.map ?? metaEnrichment[demo.filepath]?.map;
+                              if (!m) return "…";
+                              return m.replace(/^(de_|cs_|aim_)/, "");
+                            })()}
+                          </span>
+                        </div>
+
+                        {/* Score badge */}
+                        {(() => {
+                          const st = demo.scoreT ?? metaEnrichment[demo.filepath]?.scoreT;
+                          const sct = demo.scoreCT ?? metaEnrichment[demo.filepath]?.scoreCT;
+                          if (st == null || sct == null) return null;
+                          return (
+                            <div className="flex items-center space-x-1 bg-primary/10 border border-primary/20 rounded-md px-2 py-1 shrink-0 h-14">
+                              <span className="text-sm font-bold text-primary tabular-nums">{sct}</span>
+                              <span className="text-xs text-muted-foreground font-medium">–</span>
+                              <span className="text-sm font-bold text-primary tabular-nums">{st}</span>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <div>

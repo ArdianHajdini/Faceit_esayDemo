@@ -43,6 +43,13 @@ pub struct DemoMapMeta {
     pub map: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DemoMeta {
+    pub map: Option<String>,
+    pub score_t: Option<u32>,
+    pub score_ct: Option<u32>,
+}
+
 /// A player entry extracted from a CS2 demo file.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DemoPlayer {
@@ -734,6 +741,87 @@ pub mod commands {
         Ok(super::DemoMapMeta { map: None })
     }
 
+    /// Parse map + score from a demo file.
+    ///
+    /// HL2DEMO: reads map from static header (offset 536).
+    /// PBDEMS2: runs a source2-demo observer that extracts team scores from
+    ///          CCSTeam entities (`m_iScore`, `m_iTeamNum`) and scans the file
+    ///          header for the map name.
+    /// Returns `{ map, score_t, score_ct }`. Scores stay `None` if the demo
+    /// format doesn't support them or the data isn't present.
+    #[tauri::command]
+    pub fn parse_demo_meta(filepath: String) -> Result<super::DemoMeta, String> {
+        use std::io::Read;
+
+        let mut file = fs::File::open(&filepath)
+            .map_err(|e| format!("Datei nicht gefunden: {e}"))?;
+
+        let mut bytes = vec![0u8; 32768];
+        let n = file.read(&mut bytes).map_err(|e| e.to_string())?;
+        bytes.truncate(n);
+
+        if bytes.len() < 8 {
+            return Ok(super::DemoMeta { map: None, score_t: None, score_ct: None });
+        }
+
+        // ── HL2DEMO (CS:GO old format) ──────────────────────────────────
+        if &bytes[..8] == b"HL2DEMO\0" {
+            let map = if bytes.len() >= 796 {
+                let map_slice = &bytes[536..796];
+                let end = map_slice.iter().position(|&b| b == 0).unwrap_or(260);
+                let m = std::str::from_utf8(&map_slice[..end])
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if m.is_empty() { None } else { Some(m) }
+            } else {
+                None
+            };
+            return Ok(super::DemoMeta {
+                map,
+                score_t: None,
+                score_ct: None,
+            });
+        }
+
+        // ── PBDEMS2 (CS2) ────────────────────────────────────────────────
+        if &bytes[..8] == b"PBDEMS2\0" {
+            let map = scan_for_map_bytes(&bytes);
+            // Reset file to run source2-demo observer for scores
+            let meta = parse_pbdems2_meta(&filepath)?;
+            return Ok(super::DemoMeta {
+                map: meta.map.or(map),
+                score_t: meta.score_t,
+                score_ct: meta.score_ct,
+            });
+        }
+
+        Ok(super::DemoMeta { map: None, score_t: None, score_ct: None })
+    }
+
+    /// Parse CS2 demo with source2-demo observer to get team scores.
+    fn parse_pbdems2_meta(filepath: &str) -> Result<super::DemoMeta, String> {
+        use source2_demo::DemoRunner;
+
+        let file = fs::File::open(filepath)
+            .map_err(|e| format!("source2-demo: Datei nicht geoeffnet: {e}"))?;
+
+        let mut parser = source2_demo::Parser::from_reader(file)
+            .map_err(|e| format!("source2-demo: Parser-Fehler: {e}"))?;
+
+        let collector = parser.register_observer::<s2::Cs2MetaObserver>();
+
+        parser.run_to_end()
+            .map_err(|e| format!("source2-demo: run_to_end Fehler: {e}"))?;
+
+        let obs = collector.borrow();
+        Ok(super::DemoMeta {
+            map: None, // caller merges with header scan
+            score_t: obs.score_t,
+            score_ct: obs.score_ct,
+        })
+    }
+
     // ── Command — Downloads-Ordner scannen ───────────
 
     /// Scan a folder for demo files (.dem, .dem.gz, .dem.zst).
@@ -976,6 +1064,59 @@ pub mod commands {
                 let voice_slot = entity.index().saturating_sub(1);
                 self.players
                     .insert(voice_slot, PlayerEntry { xuid, name, team_num });
+                Ok(())
+            }
+        }
+
+        /// Minimal observer that extracts team scores from `CCSTeam` entities.
+        /// Key properties:
+        ///   - `m_iTeamNum` : 2 = Terrorist, 3 = Counter-Terrorist
+        ///   - `m_iScore`   : rounds won by this team
+        pub struct Cs2MetaObserver {
+            pub score_t: Option<u32>,
+            pub score_ct: Option<u32>,
+        }
+
+        impl Default for Cs2MetaObserver {
+            fn default() -> Self {
+                Cs2MetaObserver {
+                    score_t: None,
+                    score_ct: None,
+                }
+            }
+        }
+
+        #[observer]
+        #[uses_entities]
+        impl Cs2MetaObserver {
+            #[on_entity]
+            fn handle_entity(
+                &mut self,
+                _ctx: &Context,
+                entity: &Entity,
+            ) -> ObserverResult {
+                if entity.class().name() != "CCSTeam" {
+                    return Ok(());
+                }
+
+                let team_num: u32 = entity
+                    .get_property_by_name("m_iTeamNum")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(0);
+
+                let score: u32 = entity
+                    .get_property_by_name("m_iScore")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(0);
+
+                match team_num {
+                    2 => self.score_t = Some(score),
+                    3 => self.score_ct = Some(score),
+                    _ => {}
+                }
+
                 Ok(())
             }
         }
@@ -1788,6 +1929,7 @@ pub fn run() {
             commands::scan_downloads,
             commands::detect_downloads_folder,
             commands::parse_demo_map,
+            commands::parse_demo_meta,
             commands::parse_demo_players,
             commands::verify_license,
             commands::validate_license_stored,
