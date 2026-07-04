@@ -1,5 +1,5 @@
 
-import type { Demo, AppSettings } from "../types/demo";
+import type { Demo, AppSettings, PlayerAdvancedStats } from "../types/demo";
 
 const DEMOS_KEY = "cs2dm_demos";
 const SETTINGS_KEY = "cs2dm_settings";
@@ -85,4 +85,41 @@ export function loadMetaCache(): Record<string, MetaCacheEntry> {
 
 export function saveMetaCache(cache: Record<string, MetaCacheEntry>): void {
   localStorage.setItem(META_CACHE_KEY, JSON.stringify(cache));
+}
+
+// ─────────────────────────────────────────
+//  Advanced stats cache (parse_demo_advanced_stats)
+// ─────────────────────────────────────────
+
+const ADV_STATS_PREFIX = "cs2dm_adv_";
+
+/** DJB2 hash of a filepath for a short, stable cache key. */
+function djb2(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(16);
+}
+
+export function loadAdvancedStatsCache(
+  filepath: string
+): PlayerAdvancedStats[] | null {
+  try {
+    const raw = localStorage.getItem(ADV_STATS_PREFIX + djb2(filepath));
+    if (!raw) return null;
+    return JSON.parse(raw) as PlayerAdvancedStats[];
+  } catch {
+    return null;
+  }
+}
+
+export function saveAdvancedStatsCache(
+  filepath: string,
+  stats: PlayerAdvancedStats[]
+): void {
+  localStorage.setItem(
+    ADV_STATS_PREFIX + djb2(filepath),
+    JSON.stringify(stats)
+  );
 }

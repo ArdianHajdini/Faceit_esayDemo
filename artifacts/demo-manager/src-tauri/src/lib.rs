@@ -52,6 +52,27 @@ pub struct DemoMeta {
     pub score_ct: Option<u32>,
 }
 
+/// Per-player advanced stats from a CS2 demo (K/D/A, counter-strafe, rating).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PlayerAdvancedStats {
+    pub xuid: String,
+    pub name: String,
+    #[serde(rename = "teamNum")]
+    pub team_num: u32,
+    pub kills: u32,
+    pub deaths: u32,
+    pub assists: u32,
+    pub mvps: u32,
+    /// Total first-burst shots counted for counter-strafe analysis.
+    #[serde(rename = "csShotsTotal")]
+    pub cs_shots_total: u32,
+    /// First-burst shots where horizontal speed < 30 u/s (well counter-strafed).
+    #[serde(rename = "csShotsClean")]
+    pub cs_shots_clean: u32,
+    /// Simplified HLTV-style rating (0.0–2.0+).
+    pub rating: f32,
+}
+
 /// A player entry extracted from a CS2 demo file.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DemoPlayer {
@@ -1020,7 +1041,7 @@ pub mod commands {
             #[on_entity]
             fn handle_entity(
                 &mut self,
-                _ctx: &Context,
+                _event: EntityEvents,
                 entity: &Entity,
             ) -> ObserverResult {
                 if entity.class().name() != "CCSPlayerController" {
@@ -1070,6 +1091,201 @@ pub mod commands {
             }
         }
 
+        // ── Per-player record for advanced stats pass ─────────────────────────
+        pub struct AdvEntry {
+            pub xuid: String,
+            pub name: String,
+            pub team_num: u32,
+            pub kills: u32,
+            pub deaths: u32,
+            pub assists: u32,
+            pub mvps: u32,
+            pub cs_total: u32,
+            pub cs_clean: u32,
+        }
+
+        /// Combined observer: reads K/D/A from `CCSPlayerController` entities,
+        /// tracks pawn velocity from `CCSPlayerPawn`, and classifies first-burst
+        /// `weapon_fire` events as counter-strafed or not.
+        pub struct Cs2AdvancedObserver {
+            /// Keyed by controller entity.index() (1-based).
+            pub players: std::collections::HashMap<u32, AdvEntry>,
+            /// Horizontal speed (u/s) keyed by pawn entity.index().
+            pawn_speed: std::collections::HashMap<u32, f32>,
+            /// controller entity index → pawn entity index (from m_hPawn handle).
+            pawn_idx_map: std::collections::HashMap<u32, u32>,
+            /// Burst detection: controller entity index → tick of last weapon_fire.
+            last_fire_tick: std::collections::HashMap<u32, u32>,
+        }
+
+        impl Default for Cs2AdvancedObserver {
+            fn default() -> Self {
+                Cs2AdvancedObserver {
+                    players: std::collections::HashMap::new(),
+                    pawn_speed: std::collections::HashMap::new(),
+                    pawn_idx_map: std::collections::HashMap::new(),
+                    last_fire_tick: std::collections::HashMap::new(),
+                }
+            }
+        }
+
+        #[observer]
+        #[uses_entities]
+        #[uses_game_events]
+        impl Cs2AdvancedObserver {
+            /// Update K/D/A, team, and pawn handle from each CCSPlayerController tick.
+            #[on_entity("CCSPlayerController")]
+            fn on_controller(&mut self, _event: EntityEvents, entity: &Entity) -> ObserverResult {
+                let team_num: u32 = entity
+                    .get_property_by_name("m_iTeamNum")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(0);
+                if team_num != 2 && team_num != 3 {
+                    return Ok(());
+                }
+
+                let name: String = entity
+                    .get_property_by_name("m_iszPlayerName")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or_default();
+                if name.is_empty() {
+                    return Ok(());
+                }
+
+                let steam_id: u64 = entity
+                    .get_property_by_name("m_steamID")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(0);
+                let xuid = if steam_id > 76_561_197_960_265_728 {
+                    steam_id.to_string()
+                } else {
+                    String::new()
+                };
+
+                let kills: u32 = entity
+                    .get_property_by_name("m_iFrags")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(0);
+                let deaths: u32 = entity
+                    .get_property_by_name("m_iDeaths")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(0);
+                let assists: u32 = entity
+                    .get_property_by_name("m_iAssists")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(0);
+                let mvps: u32 = entity
+                    .get_property_by_name("m_iMVPs")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(0);
+
+                // m_hPawn is a 32-bit entity handle; lower 14 bits = entity index.
+                let pawn_handle: u64 = entity
+                    .get_property_by_name("m_hPawn")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(0u64);
+                let pawn_entity_idx = (pawn_handle & 0x3FFF) as u32;
+
+                let ctrl_idx = entity.index();
+                if pawn_entity_idx > 0 {
+                    self.pawn_idx_map.insert(ctrl_idx, pawn_entity_idx);
+                }
+
+                let entry = self.players.entry(ctrl_idx).or_insert_with(|| AdvEntry {
+                    xuid: xuid.clone(),
+                    name: name.clone(),
+                    team_num,
+                    kills: 0,
+                    deaths: 0,
+                    assists: 0,
+                    mvps: 0,
+                    cs_total: 0,
+                    cs_clean: 0,
+                });
+                entry.xuid = xuid;
+                entry.name = name;
+                entry.team_num = team_num;
+                entry.kills = kills;
+                entry.deaths = deaths;
+                entry.assists = assists;
+                entry.mvps = mvps;
+
+                Ok(())
+            }
+
+            /// Track horizontal speed for each CCSPlayerPawn.
+            #[on_entity("CCSPlayerPawn")]
+            fn on_pawn(&mut self, _event: EntityEvents, entity: &Entity) -> ObserverResult {
+                let vx: f32 = entity
+                    .get_property_by_name("m_vecVelocity[0]")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(0.0_f32);
+                let vy: f32 = entity
+                    .get_property_by_name("m_vecVelocity[1]")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(0.0_f32);
+                let horiz = (vx * vx + vy * vy).sqrt();
+                self.pawn_speed.insert(entity.index(), horiz);
+                Ok(())
+            }
+
+            /// Classify first-burst weapon_fire events as counter-strafed or not.
+            #[on_game_event("weapon_fire")]
+            fn on_weapon_fire(&mut self, ctx: &Context, ge: &GameEvent) -> ObserverResult {
+                // userid in CS2 weapon_fire is the player entity handle (i16 → i32).
+                let uid: i32 = ge
+                    .get_value("userid")
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                    .unwrap_or(-1);
+                if uid <= 0 {
+                    return Ok(());
+                }
+
+                // Lower 14 bits of the entity handle = entity index (1-based for player controllers).
+                let ctrl_idx = (uid as u32) & 0x3FFF;
+                if ctrl_idx == 0 {
+                    return Ok(());
+                }
+
+                // Burst detection: skip if fired within last 15 ticks (~0.5 s at 30 Hz).
+                // Only the first shot of each burst is a meaningful counter-strafe sample.
+                let tick = ctx.tick();
+                if let Some(&last_tick) = self.last_fire_tick.get(&ctrl_idx) {
+                    if tick.saturating_sub(last_tick) < 15 {
+                        self.last_fire_tick.insert(ctrl_idx, tick);
+                        return Ok(());
+                    }
+                }
+                self.last_fire_tick.insert(ctrl_idx, tick);
+
+                // Look up pawn speed via the stored handle map.
+                if let Some(&pawn_idx) = self.pawn_idx_map.get(&ctrl_idx) {
+                    let speed = self.pawn_speed.get(&pawn_idx).copied().unwrap_or(0.0_f32);
+                    if let Some(entry) = self.players.get_mut(&ctrl_idx) {
+                        entry.cs_total += 1;
+                        // Threshold: < 30 u/s horizontal = well counter-strafed.
+                        if speed < 30.0 {
+                            entry.cs_clean += 1;
+                        }
+                    }
+                }
+
+                Ok(())
+            }
+        }
+
+        // ── Score observer (re-used from parse_demo_meta) ─────────────────────────
         /// Minimal observer that extracts team scores from `CCSTeam` entities.
         /// Key properties:
         ///   - `m_iTeamNum` : 2 = Terrorist, 3 = Counter-Terrorist
@@ -1094,7 +1310,7 @@ pub mod commands {
             #[on_entity]
             fn handle_entity(
                 &mut self,
-                _ctx: &Context,
+                _event: EntityEvents,
                 entity: &Entity,
             ) -> ObserverResult {
                 if entity.class().name() != "CCSTeam" {
@@ -1551,6 +1767,85 @@ pub mod commands {
         Ok(players)
     }
 
+    /// Parse a CS2 demo for advanced per-player stats in a single pass:
+    ///   - K / D / A / MVPs from CCSPlayerController entity properties
+    ///   - Counter-strafe quality from weapon_fire events + CCSPlayerPawn velocity
+    ///   - Simplified HLTV-style rating
+    ///
+    /// Counter-strafe methodology:
+    ///   Each weapon_fire event is sampled once per burst (first shot only,
+    ///   burst gap ≥ 15 ticks). The horizontal speed of the player's pawn at
+    ///   that tick is compared to a 30 u/s threshold: < 30 = clean.
+    #[tauri::command]
+    pub fn parse_demo_advanced_stats(
+        filepath: String,
+    ) -> Result<Vec<super::PlayerAdvancedStats>, String> {
+        use source2_demo::DemoRunner;
+
+        let file = fs::File::open(&filepath)
+            .map_err(|e| format!("Datei nicht geöffnet: {e}"))?;
+
+        let mut parser = source2_demo::Parser::from_reader(file)
+            .map_err(|e| format!("Parser-Fehler: {e}"))?;
+
+        let score_col = parser.register_observer::<s2::Cs2MetaObserver>();
+        let adv_col = parser.register_observer::<s2::Cs2AdvancedObserver>();
+
+        parser
+            .run_to_end()
+            .map_err(|e| format!("Demo-Parse-Fehler: {e}"))?;
+
+        let score_obs = score_col.borrow();
+        let total_rounds = (score_obs.score_t.unwrap_or(0)
+            + score_obs.score_ct.unwrap_or(0))
+        .max(16) as f32;
+        drop(score_obs);
+
+        let obs = adv_col.borrow();
+        let mut results: Vec<super::PlayerAdvancedStats> = obs
+            .players
+            .values()
+            .map(|e| {
+                // Rating ≈ simplified HLTV 1.0:
+                //   (kills × 0.679 + (rounds − deaths) × 0.317) / rounds
+                // Clamp deaths to rounds to avoid negative contribution.
+                let deaths_capped = (e.deaths as f32).min(total_rounds);
+                let rating = (e.kills as f32 * 0.679
+                    + (total_rounds - deaths_capped) * 0.317)
+                    / total_rounds;
+                let rating = (rating * 100.0).round() / 100.0;
+
+                super::PlayerAdvancedStats {
+                    xuid: e.xuid.clone(),
+                    name: e.name.clone(),
+                    team_num: e.team_num,
+                    kills: e.kills,
+                    deaths: e.deaths,
+                    assists: e.assists,
+                    mvps: e.mvps,
+                    cs_shots_total: e.cs_total,
+                    cs_shots_clean: e.cs_clean,
+                    rating,
+                }
+            })
+            .collect();
+
+        // Sort: T-side first, then CT-side; within each team highest kills first.
+        results.sort_by(|a, b| {
+            a.team_num
+                .cmp(&b.team_num)
+                .then_with(|| b.kills.cmp(&a.kills))
+        });
+
+        eprintln!(
+            "[CS2DM] parse_demo_advanced_stats: {} Spieler, {:.0} Runden",
+            results.len(),
+            total_rounds
+        );
+
+        Ok(results)
+    }
+
     /// Detect the Windows Downloads folder for the current user.
     /// Returns the path if found, or None if it cannot be determined.
     #[tauri::command]
@@ -1933,6 +2228,7 @@ pub fn run() {
             commands::parse_demo_map,
             commands::parse_demo_meta,
             commands::parse_demo_players,
+            commands::parse_demo_advanced_stats,
             commands::verify_license,
             commands::validate_license_stored,
             commands::deactivate_license_stored,

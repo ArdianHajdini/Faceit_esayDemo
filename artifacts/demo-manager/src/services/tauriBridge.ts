@@ -6,7 +6,7 @@
  *   import { isTauri, invokeCommand } from './tauriBridge';
  */
 
-import type { Demo } from "../types/demo";
+import type { Demo, PlayerAdvancedStats } from "../types/demo";
 
 // ─────────────────────────────────────────
 //  Environment detection
@@ -241,6 +241,14 @@ export async function tauriDeactivateLicense(
 ): Promise<boolean> {
   const invoke = await getInvoke();
   return invoke<boolean>("deactivate_license_stored", { licenseKey, instanceId });
+}
+
+/** Parse a CS2 demo for advanced per-player stats (K/D/A, counter-strafe, rating). */
+export async function tauriParseAdvancedStats(
+  filepath: string
+): Promise<PlayerAdvancedStats[]> {
+  const invoke = await getInvoke();
+  return invoke<PlayerAdvancedStats[]>("parse_demo_advanced_stats", { filepath });
 }
 
 /**

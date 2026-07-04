@@ -37,6 +37,23 @@ export interface AppSettings {
   language: string;
 }
 
+/** Per-player advanced stats returned by parse_demo_advanced_stats. */
+export interface PlayerAdvancedStats {
+  xuid: string;
+  name: string;
+  teamNum: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  mvps: number;
+  /** Total first-burst shots counted for counter-strafe analysis. */
+  csShotsTotal: number;
+  /** Shots where horizontal speed < 30 u/s (well counter-strafed). */
+  csShotsClean: number;
+  /** Simplified HLTV-style rating (0.0–2.0+). */
+  rating: number;
+}
+
 export type CS2Status = "found" | "not_found" | "unknown";
 
 export type StatusMessage =

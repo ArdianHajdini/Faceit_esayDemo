@@ -13,17 +13,19 @@ import {
   CheckCircle2,
   Users,
   Loader2,
+  BarChart3,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { loadDemos, loadSettings, loadMapCache } from "@/services/storage";
+import { loadDemos, loadSettings, loadMapCache, loadAdvancedStatsCache, saveAdvancedStatsCache } from "@/services/storage";
 import { formatFileSize } from "@/services/demoService";
 import {
   isTauri,
   tauriParseDemoPlayers,
+  tauriParseAdvancedStats,
   type TauriDemoPlayer,
 } from "@/services/tauriBridge";
 import {
@@ -37,6 +39,7 @@ import {
   buildFullPlayCommand,
 } from "@/services/voiceService";
 import { useTranslation } from "@/services/i18n";
+import type { PlayerAdvancedStats } from "@/types/demo";
 
 async function loadPlayers(filepath: string): Promise<TauriDemoPlayer[]> {
   if (!isTauri()) return [];
@@ -45,6 +48,15 @@ async function loadPlayers(filepath: string): Promise<TauriDemoPlayer[]> {
   const players = await tauriParseDemoPlayers(filepath);
   setCachedPlayers(filepath, players);
   return players;
+}
+
+async function loadAdvancedStats(filepath: string): Promise<PlayerAdvancedStats[]> {
+  if (!isTauri()) return [];
+  const cached = loadAdvancedStatsCache(filepath);
+  if (cached) return cached;
+  const stats = await tauriParseAdvancedStats(filepath);
+  saveAdvancedStatsCache(filepath, stats);
+  return stats;
 }
 
 function PlayerRow({ p }: { p: TauriDemoPlayer }) {
@@ -66,6 +78,105 @@ function PlayerRow({ p }: { p: TauriDemoPlayer }) {
   );
 }
 
+function ratingColor(r: number): string {
+  if (r >= 1.15) return "text-green-400";
+  if (r >= 1.00) return "text-yellow-400";
+  if (r >= 0.85) return "text-orange-400";
+  return "text-red-400";
+}
+
+function csPercent(total: number, clean: number): string {
+  if (total === 0) return "—";
+  return `${Math.round((clean / total) * 100)}%`;
+}
+
+function csColor(total: number, clean: number): string {
+  if (total === 0) return "text-muted-foreground";
+  const pct = clean / total;
+  if (pct >= 0.75) return "text-green-400";
+  if (pct >= 0.55) return "text-yellow-400";
+  return "text-orange-400";
+}
+
+function AdvancedStatsTable({
+  stats,
+  team1Name,
+  team2Name,
+}: {
+  stats: PlayerAdvancedStats[];
+  team1Name?: string;
+  team2Name?: string;
+}) {
+  const ts = stats.filter((p) => p.teamNum === 2);
+  const cts = stats.filter((p) => p.teamNum === 3);
+
+  const TeamTable = ({
+    players,
+    label,
+  }: {
+    players: PlayerAdvancedStats[];
+    label: string;
+  }) => (
+    <div>
+      <h3 className="font-bold text-sm mb-3 uppercase tracking-wide text-foreground border-b border-border pb-2">
+        {label}
+      </h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-muted-foreground uppercase tracking-wider">
+              <th className="text-left py-1 px-2 font-medium">Player</th>
+              <th className="text-center py-1 px-2 font-medium w-8">K</th>
+              <th className="text-center py-1 px-2 font-medium w-8">D</th>
+              <th className="text-center py-1 px-2 font-medium w-8">A</th>
+              <th className="text-center py-1 px-2 font-medium w-10">★</th>
+              <th className="text-center py-1 px-2 font-medium w-16">Rating</th>
+              <th className="text-center py-1 px-2 font-medium w-20" title="Counter-strafe accuracy (first-burst shots where speed < 30 u/s)">CS%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {players.map((p) => (
+              <tr
+                key={p.xuid || p.name}
+                className="hover:bg-secondary/40 transition-colors border-b border-border/40 last:border-0"
+              >
+                <td className="py-2 px-2 font-medium text-foreground truncate max-w-[140px]">
+                  {p.name}
+                </td>
+                <td className="py-2 px-2 text-center font-mono text-green-400">{p.kills}</td>
+                <td className="py-2 px-2 text-center font-mono text-red-400">{p.deaths}</td>
+                <td className="py-2 px-2 text-center font-mono text-muted-foreground">{p.assists}</td>
+                <td className="py-2 px-2 text-center font-mono text-yellow-400">{p.mvps}</td>
+                <td className={`py-2 px-2 text-center font-mono font-bold ${ratingColor(p.rating)}`}>
+                  {p.rating.toFixed(2)}
+                </td>
+                <td className={`py-2 px-2 text-center font-mono ${csColor(p.csShotsTotal, p.csShotsClean)}`}
+                    title={`${p.csShotsClean}/${p.csShotsTotal} shots`}>
+                  {csPercent(p.csShotsTotal, p.csShotsClean)}
+                </td>
+              </tr>
+            ))}
+            {players.length === 0 && (
+              <tr>
+                <td colSpan={7} className="py-4 text-center text-muted-foreground italic text-xs">
+                  No players
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <TeamTable players={ts} label={team1Name || "Terrorists"} />
+      <TeamTable players={cts} label={team2Name || "Counter-Terrorists"} />
+    </div>
+  );
+}
+
 export default function DemoDetail() {
   const params = useParams();
   const id = params.id ?? "";
@@ -73,6 +184,8 @@ export default function DemoDetail() {
   const t = useTranslation();
 
   const [copiedPreset, setCopiedPreset] = useState<string | null>(null);
+  const [showStats, setShowStats] = useState(false);
+  const [statsRequested, setStatsRequested] = useState(false);
 
   const demo = useMemo(() => loadDemos().find((d) => d.id === id) ?? null, [id]);
   const settings = useMemo(() => loadSettings(), []);
@@ -86,6 +199,12 @@ export default function DemoDetail() {
     queryKey: ["players", demo?.filepath],
     queryFn: () => loadPlayers(demo!.filepath),
     enabled: !!demo,
+  });
+
+  const { data: advStats, isLoading: loadingStats } = useQuery({
+    queryKey: ["advStats", demo?.filepath],
+    queryFn: () => loadAdvancedStats(demo!.filepath),
+    enabled: !!demo && statsRequested,
   });
 
   const rosters = players ? buildRosters(players) : null;
@@ -108,6 +227,11 @@ export default function DemoDetail() {
       description: t.copiedDesc(label),
     });
     setTimeout(() => setCopiedPreset(null), 2000);
+  };
+
+  const handleAnalyze = () => {
+    setStatsRequested(true);
+    setShowStats(true);
   };
 
   if (!demo) {
@@ -177,7 +301,7 @@ export default function DemoDetail() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Left Column - Players */}
+        {/* Left Column - Players + Advanced Stats */}
         <div className="xl:col-span-2 space-y-6">
           <Card className="bg-card border-border">
             <CardHeader className="border-b border-border pb-4 bg-secondary/20">
@@ -249,6 +373,60 @@ export default function DemoDetail() {
               )}
             </CardContent>
           </Card>
+
+          {/* Advanced Stats Card */}
+          {isTauri() && (
+            <Card className="bg-card border-border">
+              <CardHeader className="border-b border-border pb-4 bg-secondary/20">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="uppercase tracking-wider text-sm flex items-center">
+                      <BarChart3 className="w-4 h-4 mr-2 text-primary" />
+                      Advanced Stats
+                    </CardTitle>
+                    <CardDescription className="text-xs mt-1">
+                      K/D/A · Rating · Counter-strafe% — parsed from demo entities
+                    </CardDescription>
+                  </div>
+                  {!showStats && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleAnalyze}
+                      className="border-primary/40 text-primary hover:bg-primary/10"
+                    >
+                      <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
+                      Analyze
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="p-4">
+                {!showStats ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <BarChart3 className="w-8 h-8 mx-auto mb-3 opacity-20" />
+                    <p className="text-sm">Click "Analyze" to parse K/D/A, Rating and Counter-strafe from the demo file.</p>
+                    <p className="text-xs mt-1 opacity-70">Takes a few seconds — result is cached locally.</p>
+                  </div>
+                ) : loadingStats ? (
+                  <div className="flex flex-col items-center gap-3 py-10 text-muted-foreground">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                    <span className="text-sm">Parsing demo… this may take a few seconds</span>
+                  </div>
+                ) : advStats && advStats.length > 0 ? (
+                  <AdvancedStatsTable
+                    stats={advStats}
+                    team1Name={demo.team1Name}
+                    team2Name={demo.team2Name}
+                  />
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p className="text-sm">No player data found in this demo.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right Column - Voice Presets */}
