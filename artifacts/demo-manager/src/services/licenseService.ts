@@ -10,7 +10,7 @@ const GRACE_DAYS = 7;
 
 const LS_API = "https://api.lemonsqueezy.com/v1/licenses";
 const GR_API = "https://api.gumroad.com/v2/licenses/verify";
-const GR_PRODUCT_ID = "EcCnnssFUOEJtRzhbu3BVg==";
+const GR_PRODUCT_ID = "2yW8xYHXZ3Zp4EswsRVqqA==";
 
 interface StoredLicense {
   key: string;
