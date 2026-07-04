@@ -67,7 +67,7 @@ export default function Library() {
             if (meta.map) entry.map = meta.map;
             if (meta.scoreT != null) entry.scoreT = meta.scoreT;
             if (meta.scoreCT != null) entry.scoreCT = meta.scoreCT;
-            if (entry.map != null || entry.scoreT != null) {
+            if (entry.map != null || entry.scoreT != null || entry.scoreCT != null) {
               cache[demo.filepath] = entry;
               setMetaEnrichment((prev) => ({ ...prev, [demo.filepath]: entry }));
               saveMetaCache(cache);
@@ -250,7 +250,19 @@ export default function Library() {
                         {(() => {
                           const st = demo.scoreT ?? metaEnrichment[demo.filepath]?.scoreT;
                           const sct = demo.scoreCT ?? metaEnrichment[demo.filepath]?.scoreCT;
-                          if (st == null || sct == null) return null;
+                          const hasAnyScore = st != null || sct != null;
+                          const hasBothScores = st != null && sct != null;
+
+                          if (!hasAnyScore) return null;
+
+                          if (!hasBothScores) {
+                            return (
+                              <div className="flex items-center justify-center bg-primary/5 border border-primary/10 rounded-md px-2 shrink-0 h-14 w-16">
+                                <Skeleton className="h-4 w-8" />
+                              </div>
+                            );
+                          }
+
                           return (
                             <div className="flex items-center space-x-1 bg-primary/10 border border-primary/20 rounded-md px-2 py-1 shrink-0 h-14">
                               <span className="text-sm font-bold text-primary tabular-nums">{sct}</span>

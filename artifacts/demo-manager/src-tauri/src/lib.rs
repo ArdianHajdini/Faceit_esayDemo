@@ -46,7 +46,9 @@ pub struct DemoMapMeta {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DemoMeta {
     pub map: Option<String>,
+    #[serde(rename = "scoreT")]
     pub score_t: Option<u32>,
+    #[serde(rename = "scoreCT")]
     pub score_ct: Option<u32>,
 }
 
