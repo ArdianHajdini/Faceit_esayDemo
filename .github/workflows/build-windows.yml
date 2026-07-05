@@ -2,7 +2,7 @@ name: Build FACEIT easyDemo CS2 (Windows)
 
 on:
   push:
-    branches: [main]
+    branches: [main, experimental]
     paths:
       - "artifacts/demo-manager/**"
       - ".github/workflows/build-windows.yml"
